@@ -2,8 +2,13 @@ import os
 from moviepy.editor import VideoFileClip
 from openai import OpenAI
 
+import configparser
+
+config = configparser.ConfigParser()
+config.read("config.ini")
 # Initialize the OpenAI client
-client = OpenAI(api_key="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")
+
+client = OpenAI(api_key=config["DEFAULT"]["api_key"])
 
 
 def extract_audio(video_path, audio_path):
