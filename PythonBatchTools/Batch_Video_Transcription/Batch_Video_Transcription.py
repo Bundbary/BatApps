@@ -4,11 +4,8 @@ from openai import OpenAI
 
 import configparser
 
-config = configparser.ConfigParser()
-config.read("config.ini")
 # Initialize the OpenAI client
 
-client = OpenAI(api_key=config["DEFAULT"]["api_key"])
 
 
 def extract_audio(video_path, audio_path):
