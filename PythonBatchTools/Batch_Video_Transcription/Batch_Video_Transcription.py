@@ -49,25 +49,10 @@ def process_folder(folder_path):
 
 if __name__ == "__main__":
     sample_folder_paths = [
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724072039_0007_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724072454_0008_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724075151_0010_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724075553_0011_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724080905_0012_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724081304_0013_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724085056_0014_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724085421_0015_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724085610_0016_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724085718_0017_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724090112_0018_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724091545_0019_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724091711_0020_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724091947_0021_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724093843_0022_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724094314_0023_D_clips",
-        "c:\\Users\\bpenn\\ExpectancyLearning\\Reckitt\\Video\\JeremyNarratedPrimary\\mp4\\clips\\all_video_clips\\DJI_20240724095037_0024_D_clips",
+        "c:\\11111\\test\\noaudio_videos"
     ]
 
     for folder_path in sample_folder_paths:
+        print(f"Processing folder: {folder_path}")
         process_folder(folder_path)
     folder_path = input("Enter the path to the folder containing MP4 files: ")

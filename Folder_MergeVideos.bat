@@ -1,6 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
+
 REM Confirmation prompt
 set /p "confirm=Press Y if you ran this file on purpose. (Y/N): "
 if /i "%confirm%" neq "Y" goto :eof
