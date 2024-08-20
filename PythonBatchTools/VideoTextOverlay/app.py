@@ -3,9 +3,7 @@ from typing import List, Union
 from dataclasses import dataclass
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, ColorClip
 from moviepy.video.fx.all import fadeout, fadein
-import numpy as np
 import os
-import subprocess
 from moviepy.config import change_settings
 
 # Set the path to ImageMagick binary
@@ -64,7 +62,7 @@ class VideoTextOverlayProcessor:
         if overlay.shadow_color and overlay.shadow_offset:
             shadow = TextClip(overlay.text, fontsize=overlay.fontsize, color=overlay.shadow_color, font='Arial', method='label')
             shadow = shadow.set_position((overlay.position[0] + overlay.shadow_offset[0],
-                                        overlay.position[1] + overlay.shadow_offset[1]))
+                                          overlay.position[1] + overlay.shadow_offset[1]))
             text_clip = CompositeVideoClip([shadow, text_clip])
 
         if overlay.is_rotating():
@@ -72,7 +70,7 @@ class VideoTextOverlayProcessor:
             text_clip = text_clip.rotate(lambda t: rotate_func(t))
 
         return text_clip
-    
+
     def create_text_overlay_video(self) -> str:
         with VideoFileClip(self.video_path) as video:
             width, height = video.w, video.h
@@ -91,50 +89,14 @@ class VideoTextOverlayProcessor:
         text_composite = CompositeVideoClip([background] + text_clips, size=(width, height))
         text_composite = text_composite.set_duration(duration)
 
-        overlay_path = self.video_path.rsplit('.', 1)[0] + '_text_overlay.mp4'
-        text_composite.write_videofile(overlay_path, fps=fps, codec='libx264', audio=False,
-                                    ffmpeg_params=["-pix_fmt", "yuva420p", "-crf", "23"])
+        overlay_path = os.path.splitext(self.video_path)[0] + '_text_overlay.mp4'
+        text_composite.write_videofile(overlay_path, fps=fps, codec='libx264',
+                                       ffmpeg_params=["-pix_fmt", "yuva420p", "-crf", "23"])
 
         return overlay_path
 
-    def merge_videos(self, original_video: str, overlay_video: str, output_video: str):
-        cmd = [
-            "ffmpeg",
-            "-i", original_video,
-            "-i", overlay_video,
-            "-filter_complex", "[1:v]format=rgba,colorchannelmixer=aa=1[ovr];[0:v][ovr]overlay=format=auto,format=yuv420p",
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "23",
-            "-c:a", "copy",
-            output_video,
-        ]
-        subprocess.run(cmd, check=True)
-
-    def optimize_video(self, input_video: str, output_video: str):
-        cmd = [
-            "ffmpeg",
-            "-i", input_video,
-            "-c:v", "libx264",
-            "-crf", "23",
-            "-preset", "medium",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            output_video,
-        ]
-        subprocess.run(cmd, check=True)
-
     def process_overlays(self) -> None:
-        overlay_video = self.create_text_overlay_video()
-        merged_video = self.video_path.rsplit(".", 1)[0] + "_merged.mp4"
-        self.merge_videos(self.video_path, overlay_video, merged_video)
-
-        output_path = self.video_path.rsplit(".", 1)[0] + "_with_text_optimized.mp4"
-        self.optimize_video(merged_video, output_path)
-
-        # Clean up intermediate files
-        os.remove(overlay_video)
-        os.remove(merged_video)
+        self.create_text_overlay_video()
 
 def main():
     processor = VideoTextOverlayProcessor(
