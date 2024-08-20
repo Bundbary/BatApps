@@ -24,6 +24,12 @@ REM Create a folder for all clips
 set "all_clips_folder=%input_folder%\all_video_clips"
 if not exist "%all_clips_folder%" mkdir "%all_clips_folder%"
 
+
+:: Start time for time lapse
+for /f "tokens=1-4 delims=:.," %%a in ("%time%") do (
+    set /a "start=(((%%a*60+1%%b%%100)*60+1%%c%%100)*100+1%%d%%100)-36610100"
+)
+
 REM Process each video file in the folder
 for %%F in ("%input_folder%\*.mp4" "%input_folder%\*.avi" "%input_folder%\*.mov") do (
     set "input_file=%%F"
@@ -44,7 +50,9 @@ for %%F in ("%input_folder%\*.mp4" "%input_folder%\*.avi" "%input_folder%\*.mov"
         set /a "start=%%i"
         set /a "end=%%i+%clip_duration%"
         if !end! gtr !duration_int! set end=!duration_int!
-        set "output_file=!output_folder!\clip_!clip_count!.mp4"
+        set "padded_count=00!clip_count!"
+        set "output_file=!output_folder!\clip_!padded_count:~-3!.mp4"
+        @REM set "output_file=!output_folder!\clip_!clip_count!.mp4"
         ffmpeg -i "!input_file!" -ss !start! -t %clip_duration% -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -avoid_negative_ts make_zero -y "!output_file!"
         set /a clip_count+=1
     )
@@ -54,4 +62,14 @@ for %%F in ("%input_folder%\*.mp4" "%input_folder%\*.avi" "%input_folder%\*.mov"
 
 REM Output completion message
 echo All videos have been processed. Clips are saved in: %all_clips_folder%
+
+:: End time for time lapse
+for /f "tokens=1-4 delims=:.," %%a in ("%time%") do (
+    set /a "end=(((%%a*60+1%%b%%100)*60+1%%c%%100)*100+1%%d%%100)-36610100"
+)
+
+:: Calculate the duration
+set /a duration=end-start
+echo Duration: !duration!
+
 pause

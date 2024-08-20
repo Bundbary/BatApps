@@ -1,0 +1,9 @@
+moviepy
+numpy
+decorator
+imageio
+imageio-ffmpeg
+proglog
+requests
+tqdm
+Pillow>=8.3.2
