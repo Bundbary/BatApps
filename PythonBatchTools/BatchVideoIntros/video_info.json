@@ -1,0 +1,44 @@
+{
+    "video": {
+        "width": 1920,
+        "height": 1080,
+        "frame_rate": 30,
+        "codec": "h264",
+        "pix_fmt": "yuv420p10le",
+        "color_space": "bt709",
+        "color_transfer": "bt709",
+        "color_primaries": "bt709"
+    },
+    "intro": {
+        "title": "VIDEO TITLE GOES\nIN THIS PLACE",
+        "subtitle": "Supporting text describing the video will go in this place. Maybe other general instructions.",
+        "timestamps": [
+            "Timestamp 1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
+            "Timestamp 2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
+            "Timestamp 3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
+            "Timestamp 4 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
+            "Timestamp 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00"
+        ]
+    },
+    "fonts": {
+        "title": {
+            "name": "Arial",
+            "size": 48,
+            "color": "#FF0093"
+        },
+        "subtitle": {
+            "name": "Arial",
+            "size": 24,
+            "color": "#000000"
+        },
+        "timestamps": {
+            "name": "Consolas",
+            "size": 18,
+            "color": "#000000"
+        }
+    },
+    "layout": {
+        "image_width_percentage": 60,
+        "margin": 0
+    }
+}

@@ -7,22 +7,21 @@ import threading
 import win32gui
 import win32con
 
+
 def read_video_info(json_file):
-    with open(json_file, 'r') as f:
+    with open(json_file, "r") as f:
         data = json.load(f)
-    
-    video_stream = next(s for s in data['streams'] if s['codec_type'] == 'video')
-    
+
+    video_info = data["video"]
+    video_info["frame_rate"] = eval(f"{video_info['frame_rate']}/1")  # Convert to float
+
     return {
-        'width': video_stream['width'],
-        'height': video_stream['height'],
-        'frame_rate': eval(video_stream['r_frame_rate']),
-        'codec': video_stream['codec_name'],
-        'pix_fmt': video_stream['pix_fmt'],
-        'color_space': video_stream['color_space'],
-        'color_transfer': video_stream['color_transfer'],
-        'color_primaries': video_stream['color_primaries']
+        "video": video_info,
+        "intro": data["intro"],
+        "fonts": data["fonts"],
+        "layout": data["layout"],
     }
+
 
 def minimize_powerpoint(powerpoint):
     time.sleep(1)
@@ -30,56 +29,104 @@ def minimize_powerpoint(powerpoint):
     if hwnd:
         win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
 
-def create_presentation(title, subtitle, timestamps, video_info):
+
+def create_presentation(video_info):
     pythoncom.CoInitialize()
     powerpoint = win32com.client.Dispatch("PowerPoint.Application")
     powerpoint.Visible = True
     try:
-        threading.Thread(target=minimize_powerpoint, args=(powerpoint,), daemon=True).start()
+        threading.Thread(
+            target=minimize_powerpoint, args=(powerpoint,), daemon=True
+        ).start()
 
         presentation = powerpoint.Presentations.Add()
-        
+
         # Set slide size to match video dimensions
-        presentation.PageSetup.SlideWidth = video_info['width']
-        presentation.PageSetup.SlideHeight = video_info['height']
+        presentation.PageSetup.SlideWidth = video_info["video"]["width"]
+        presentation.PageSetup.SlideHeight = video_info["video"]["height"]
 
         slide = presentation.Slides.Add(1, 12)  # 12 corresponds to ppLayoutBlank
 
         # Set background color to white
-        slide.Background.Fill.ForeColor.RGB = 255 + 255*256 + 255*256*256
+        slide.Background.Fill.ForeColor.RGB = 255 + 255 * 256 + 255 * 256 * 256
+
+        # Calculate dimensions
+        margin = video_info["layout"]["margin"]
+        padding = 50
+        image_width = (
+            video_info["video"]["width"]
+            * video_info["layout"]["image_width_percentage"]
+            / 100
+        )
+        text_width = video_info["video"]["width"] - image_width - margin - padding * 2
+
+        # Add elements to the slide
+        elements = []
+
+        # Add image placeholder
+        img_placeholder = slide.Shapes.AddShape(
+            1,
+            video_info["video"]["width"] - image_width,
+            0,
+            image_width,
+            video_info["video"]["height"],
+        )
+        img_placeholder.Fill.ForeColor.RGB = (
+            200 + 200 * 256 + 200 * 256 * 256
+        )  # Light gray
+        elements.append(img_placeholder)
 
         # Add title
-        title_box = slide.Shapes.AddTextbox(1, 30, 30, video_info['width'] - 60, 50)
-        title_box.TextFrame.TextRange.Text = title
-        title_box.TextFrame.TextRange.Font.Name = "Arial"
-        title_box.TextFrame.TextRange.Font.Size = 32
-        title_box.TextFrame.TextRange.Font.Color.RGB = 255 + 0*256 + 147*256*256  # Hot pink
-        title_box.TextFrame.TextRange.ParagraphFormat.Alignment = 1  # 1 corresponds to ppAlignLeft
+        title_box = slide.Shapes.AddTextbox(
+            1, margin + padding, margin + padding, text_width, 120
+        )
+        title_box.TextFrame.TextRange.Text = video_info["intro"]["title"]
+        title_box.TextFrame.TextRange.ParagraphFormat.Alignment = (
+            1  # 1 corresponds to ppAlignLeft
+        )
+        title_box.TextFrame.TextRange.Font.Name = video_info["fonts"]["title"]["name"]
+        title_box.TextFrame.TextRange.Font.Size = video_info["fonts"]["title"]["size"]
+        title_box.TextFrame.TextRange.Font.Color.RGB = int(
+            video_info["fonts"]["title"]["color"].replace("#", "0x"), 16
+        )
+        elements.append(title_box)
 
         # Add subtitle
-        subtitle_box = slide.Shapes.AddTextbox(1, 30, 90, video_info['width'] - 60, 60)
-        subtitle_box.TextFrame.TextRange.Text = subtitle
-        subtitle_box.TextFrame.TextRange.Font.Name = "Arial"
-        subtitle_box.TextFrame.TextRange.Font.Size = 16
-        subtitle_box.TextFrame.TextRange.Font.Color.RGB = 0  # Black
+        subtitle_box = slide.Shapes.AddTextbox(
+            1, margin + padding, margin + padding + 140, text_width, 60
+        )
+        subtitle_box.TextFrame.TextRange.Text = video_info["intro"]["subtitle"]
         subtitle_box.TextFrame.TextRange.ParagraphFormat.Alignment = 1
+        subtitle_box.TextFrame.TextRange.Font.Name = video_info["fonts"]["subtitle"][
+            "name"
+        ]
+        subtitle_box.TextFrame.TextRange.Font.Size = video_info["fonts"]["subtitle"][
+            "size"
+        ]
+        subtitle_box.TextFrame.TextRange.Font.Color.RGB = int(
+            video_info["fonts"]["subtitle"]["color"].replace("#", "0x"), 16
+        )
+        elements.append(subtitle_box)
 
         # Add timestamps
-        timestamp_boxes = []
-        for i, timestamp in enumerate(timestamps):
-            ts_box = slide.Shapes.AddTextbox(1, 30, 180 + i*30, video_info['width'] - 60, 25)
+        for i, timestamp in enumerate(video_info["intro"]["timestamps"]):
+            ts_box = slide.Shapes.AddTextbox(
+                1, margin + padding, margin + padding + 220 + i * 40, text_width, 30
+            )
             ts_box.TextFrame.TextRange.Text = timestamp
-            ts_box.TextFrame.TextRange.Font.Name = "Consolas"
-            ts_box.TextFrame.TextRange.Font.Size = 14
-            ts_box.TextFrame.TextRange.Font.Color.RGB = 0  # Black
             ts_box.TextFrame.TextRange.ParagraphFormat.Alignment = 1
-            timestamp_boxes.append(ts_box)
+            ts_box.TextFrame.TextRange.Font.Name = video_info["fonts"]["timestamps"][
+                "name"
+            ]
+            ts_box.TextFrame.TextRange.Font.Size = video_info["fonts"]["timestamps"][
+                "size"
+            ]
+            ts_box.TextFrame.TextRange.Font.Color.RGB = int(
+                video_info["fonts"]["timestamps"]["color"].replace("#", "0x"), 16
+            )
+            elements.append(ts_box)
 
-        # Add placeholder for image
-        img_placeholder = slide.Shapes.AddShape(1, video_info['width'] - 580, 30, 550, 400)  # 1 corresponds to msoShapeRectangle
-        img_placeholder.Fill.ForeColor.RGB = 200 + 200*256 + 200*256*256  # Light gray
-
-        return powerpoint, presentation, slide, title_box, subtitle_box, timestamp_boxes, img_placeholder
+        return powerpoint, presentation, slide, elements
     except Exception as e:
         print(f"An error occurred while creating the presentation: {str(e)}")
         if powerpoint:
@@ -87,42 +134,54 @@ def create_presentation(title, subtitle, timestamps, video_info):
         pythoncom.CoUninitialize()
         raise
 
-def add_animations(slide, title_box, subtitle_box, timestamp_boxes, img_placeholder):
+
+msoAnimEffectFade = 14  # 14 is the value for msoAnimEffectFade
+msoAnimTriggerOnPageClick = 1  # 1 is the value for msoAnimTriggerOnPageClick
+msoAnimateLevelNone = 0  # 0 is the value for msoAnimateLevelNone
+msoAnimTriggerWithPrevious = 2  # 2 is the value for msoAnimTriggerWithPrevious
+
+
+import win32com.client
+
+def add_animations(slide, elements):
     try:
-        # Add fade in animation to title
-        title_box.AnimationSettings.TextLevelEffect = 0
-        title_box.AnimationSettings.EntryEffect = 3844  # 3844 corresponds to ppEffectFlyFromLeft
-
-        # Add fade in animation to subtitle
-        subtitle_box.AnimationSettings.TextLevelEffect = 0
-        subtitle_box.AnimationSettings.EntryEffect = 3844
-
-        # Add appear animation to timestamps, one by one
-        for ts_box in timestamp_boxes:
-            ts_box.AnimationSettings.TextLevelEffect = 0
-            ts_box.AnimationSettings.EntryEffect = 3585  # 3585 corresponds to ppEffectAppear
-
-        # Add fade in animation to image placeholder
-        img_placeholder.AnimationSettings.TextLevelEffect = 0
-        img_placeholder.AnimationSettings.EntryEffect = 3844
+        for i, element in enumerate(elements):
+            # Add a fade effect to each element
+            anim = slide.TimeLine.MainSequence.AddEffect(
+                element,  # The shape to which the effect is applied
+                14,  # msoAnimEffectFade (14)
+                0,  # TextLevelEffect: msoAnimateLevelNone (0)
+                1   # Trigger: msoAnimTriggerOnPageClick (1)
+            )
+            
+            # Set the timing to start with previous (for smooth sequence)
+            if i > 0:
+                anim.Timing.TriggerType = 2  # msoAnimTriggerWithPrevious (2)
+            
+            # Add a small delay between animations
+            anim.Timing.TriggerDelayTime = i * 0.5  # 0.5 second delay between each element
+            
     except Exception as e:
         print(f"An error occurred while adding animations: {str(e)}")
         raise
 
+
+
+
 def export_to_video(presentation, video_path, video_info):
     try:
-        # Use video_info to set export parameters
-        frame_rate = min(30, video_info['frame_rate'])  # PowerPoint max is 30 fps
-        quality = 95  # Assuming high quality, adjust if needed
-        
-        presentation.CreateVideo(video_path, -1, 15, video_info['height'], frame_rate, quality)
+        frame_rate = min(30, video_info["video"]["frame_rate"])
+        quality = 95
+
+        presentation.CreateVideo(
+            video_path, -1, 15, video_info["video"]["height"], frame_rate, quality
+        )
         print(f"Video export initiated. File will be saved to: {video_path}")
-        
-        # Wait for the file to be created and fully written
-        max_wait_time = 300  # 5 minutes
+
+        max_wait_time = 300
         start_time = time.time()
         last_size = -1
-        
+
         while True:
             if os.path.exists(video_path):
                 current_size = os.path.getsize(video_path)
@@ -130,44 +189,35 @@ def export_to_video(presentation, video_path, video_info):
                     print(f"Video file created and fully written at: {video_path}")
                     break
                 last_size = current_size
-            
+
             if time.time() - start_time > max_wait_time:
                 raise TimeoutError("Video export timed out after 5 minutes")
-            
-            time.sleep(1)  # Check every second
-        
+
+            time.sleep(1)
+
     except Exception as e:
         print(f"An error occurred during video export: {str(e)}")
         raise
-    
+
+
 def main(json_file_path):
     video_info = read_video_info(json_file_path)
 
-    title = "VIDEO TITLE GOES IN THIS PLACE"
-    subtitle = "Supporting text describing the video will go in this place. Maybe other general instructions."
-    timestamps = [
-        "Timestamp 1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-        "Timestamp 2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-        "Timestamp 3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-        "Timestamp 4 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-        "Timestamp 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00"
-    ]
-
     powerpoint = None
     try:
-        powerpoint, presentation, slide, title_box, subtitle_box, timestamp_boxes, img_placeholder = create_presentation(title, subtitle, timestamps, video_info)
-        add_animations(slide, title_box, subtitle_box, timestamp_boxes, img_placeholder)
+        powerpoint, presentation, slide, elements = create_presentation(video_info)
+        add_animations(slide, elements)
 
-        pptx_path = os.path.abspath('intro_test_refined.pptx')
+        pptx_path = os.path.abspath("intro_test_refined.pptx")
         presentation.SaveAs(pptx_path)
         print(f"Presentation saved to: {pptx_path}")
 
-        video_path = os.path.abspath('intro_test_video_refined.mp4')
+        video_path = os.path.abspath("intro_test_video_refined.mp4")
         export_to_video(presentation, video_path, video_info)
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
-    
+
     finally:
         if powerpoint:
             powerpoint.Quit()
@@ -175,6 +225,7 @@ def main(json_file_path):
 
     print("Script completed.")
 
+
 if __name__ == "__main__":
-    json_file_path = 'video_info.json'  # You can change this to accept command line arguments if needed
+    json_file_path = "video_info.json"
     main(json_file_path)
