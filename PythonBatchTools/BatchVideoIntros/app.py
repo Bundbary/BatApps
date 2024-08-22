@@ -135,41 +135,53 @@ def create_presentation(video_info):
         raise
 
 
-msoAnimEffectFade = 14  # 14 is the value for msoAnimEffectFade
-msoAnimTriggerOnPageClick = 1  # 1 is the value for msoAnimTriggerOnPageClick
-msoAnimateLevelNone = 0  # 0 is the value for msoAnimateLevelNone
-msoAnimTriggerWithPrevious = 2  # 2 is the value for msoAnimTriggerWithPrevious
-
-
 import win32com.client
 
 def add_animations(slide, elements):
     try:
+        # Constants
+        ppEffectFade = 2  # Numeric value for fade effect
+        ppAnimateByAllLevels = 2
+        ppTimingWithPrevious = 2
+
         for i, element in enumerate(elements):
+            # Set animation settings for the shape
+            animation_settings = element.AnimationSettings
+            animation_settings.TextLevelEffect = ppAnimateByAllLevels
+            animation_settings.Animate = True
+
             # Add a fade effect to each element
             anim = slide.TimeLine.MainSequence.AddEffect(
-                element,  # The shape to which the effect is applied
-                14,  # msoAnimEffectFade (14)
-                0,  # TextLevelEffect: msoAnimateLevelNone (0)
-                1   # Trigger: msoAnimTriggerOnPageClick (1)
+                element,
+                ppEffectFade,  # Using numeric value for fade effect
+                0,  # Entry
+                ppTimingWithPrevious
             )
             
-            # Set the timing to start with previous (for smooth sequence)
-            if i > 0:
-                anim.Timing.TriggerType = 2  # msoAnimTriggerWithPrevious (2)
+            # Set the timing
+            anim.Timing.Duration = 0.5  # 0.5 second fade duration
             
-            # Add a small delay between animations
-            anim.Timing.TriggerDelayTime = i * 0.5  # 0.5 second delay between each element
-            
+            if i == 0:
+                # Start the first animation immediately
+                anim.Timing.TriggerDelayTime = 0
+            else:
+                # Slightly overlap subsequent animations
+                anim.Timing.TriggerDelayTime = 0.25 * i  # 0.25 second intervals
+
+        print("Animations added successfully")
+        
     except Exception as e:
         print(f"An error occurred while adding animations: {str(e)}")
         raise
-
-
-
-
+    
+	
 def export_to_video(presentation, video_path, video_info):
     try:
+        # Delete existing video file if it exists
+        if os.path.exists(video_path):
+            os.remove(video_path)
+            print(f"Existing video file deleted: {video_path}")
+
         frame_rate = min(30, video_info["video"]["frame_rate"])
         quality = 95
 
@@ -199,16 +211,15 @@ def export_to_video(presentation, video_path, video_info):
         print(f"An error occurred during video export: {str(e)}")
         raise
 
-
 def main(json_file_path):
     video_info = read_video_info(json_file_path)
 
     powerpoint = None
+    pptx_path = os.path.abspath("intro_test_refined.pptx")
     try:
         powerpoint, presentation, slide, elements = create_presentation(video_info)
         add_animations(slide, elements)
 
-        pptx_path = os.path.abspath("intro_test_refined.pptx")
         presentation.SaveAs(pptx_path)
         print(f"Presentation saved to: {pptx_path}")
 
@@ -223,8 +234,12 @@ def main(json_file_path):
             powerpoint.Quit()
             pythoncom.CoUninitialize()
 
-    print("Script completed.")
+        # Delete the PowerPoint file
+        if os.path.exists(pptx_path):
+            os.remove(pptx_path)
+            print(f"PowerPoint file deleted: {pptx_path}")
 
+    print("Script completed.")
 
 if __name__ == "__main__":
     json_file_path = "video_info.json"
