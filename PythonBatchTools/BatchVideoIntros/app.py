@@ -6,67 +6,97 @@ import sys
 import gc
 import psutil
 import traceback
+import math
 
 
 def pixels_to_points(pixels):
     return pixels * 72 / 96  # Convert pixels to points
 
 
-def time_operation(operation_name):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            start_time = time.time()
-            result = func(*args, **kwargs)
-            end_time = time.time()
-            print(f"{operation_name} took {end_time - start_time:.2f} seconds")
-            return result
-        return wrapper
-    return decorator
-
-
 def force_terminate_powerpoint():
-    for proc in psutil.process_iter(['name']):
-        if proc.info['name'] == 'POWERPNT.EXE':
+    for proc in psutil.process_iter(["name"]):
+        if proc.info["name"] == "POWERPNT.EXE":
             print(f"Forcefully terminating PowerPoint process (PID: {proc.pid})")
-            proc.terminate()
-            proc.wait(timeout=5)
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except psutil.TimeoutExpired:
+                proc.kill()
+
+def calculate_font_size_from_character_count(char_count):
+    if char_count <= 20:
+        return 100
+    elif char_count <= 30:
+        return 87
+    elif char_count <= 50:
+        return 60
+    elif char_count <= 90:
+        return 48
+    else:
+        return 43
+
+def calculate_optimal_font_size(slide, text, max_width, max_height, font_name, min_font_size, max_font_size):
+    char_count = len(text)
+    font_size = calculate_font_size_from_character_count(char_count)
+    print(f"Calculated font size based on {char_count} characters: {font_size}")
+    
+    # Ensure the font size is within the specified min and max
+    final_size = max(min(font_size, max_font_size), min_font_size)
+    print(f"Final font size (after min/max adjustment): {final_size}")
+    return final_size
 
 
-def add_textbox(slide, text, left, top, width, settings):
+def add_textbox_with_dynamic_font(slide, text, left, top, width, height, settings):
     try:
-        height = pixels_to_points(settings.get('height', settings['font_size'] * 1.5))
-        
+        if settings.get('dynamic_sizing', False):
+            font_size = calculate_optimal_font_size(
+                slide, text, width, height, 
+                settings['font_name'], 
+                settings.get('min_font_size', 43), 
+                settings.get('max_font_size', 100)
+            )
+        else:
+            font_size = settings['font_size']
+
+        print(f"Adding textbox with font size: {font_size}")
+
         textbox = slide.Shapes.AddTextbox(1, left, top, width, height)
         textframe = textbox.TextFrame
-        textframe.TextRange.Text = text
-        textframe.TextRange.ParagraphFormat.Alignment = 1  # ppAlignLeft
-        textframe.VerticalAnchor = 1  # ppAnchorTop
+        textframe.AutoSize = 0  # Disable auto-sizing
         textframe.WordWrap = True
 
-        font = textframe.TextRange.Font
+        textrange = textframe.TextRange
+        textrange.Text = text
+        textrange.ParagraphFormat.Alignment = 1  # Center align
+        textrange.ParagraphFormat.SpaceWithin = settings.get('space_within', 1.0)
+
+        font = textrange.Font
         font.Name = settings['font_name']
-        font.Size = settings['font_size']
+        font.Size = font_size
         font.Color.RGB = settings['color']
-        
-        # Set line spacing
-        paragraph_format = textframe.TextRange.ParagraphFormat
-        if 'space_within' in settings:
-            paragraph_format.SpaceWithin = settings['space_within']
+
+        # Adjust vertical alignment
+        text_height = textframe.TextRange.BoundHeight
+        if text_height < height:
+            textframe.MarginTop = max(0, (height - text_height) / 2)
+        else:
+            textframe.MarginTop = 0
+
+        print(f"Final textbox height: {textframe.TextRange.BoundHeight}")
 
         return textbox
     except Exception as e:
-        print(f"Error in add_textbox: {str(e)}")
+        print(f"Error in add_textbox_with_dynamic_font: {str(e)}")
         print(traceback.format_exc())
         return None
-    
-       
-@time_operation("Total execution")
+      
+
 def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
-        with open(video_info_path, 'r') as file:
+        with open(video_info_path, "r") as file:
             video_info = json.load(file)
-        
-        with open(layout_settings_path, 'r') as file:
+
+        with open(layout_settings_path, "r") as file:
             layout_settings = json.load(file)
 
         powerpoint = None
@@ -80,15 +110,17 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
 
             start_time = time.time()
             presentation = powerpoint.Presentations.Add()
-            
+
             # Set slide size
-            slide_width = pixels_to_points(video_info['video']['width'])
-            slide_height = pixels_to_points(video_info['video']['height'])
+            slide_width = pixels_to_points(video_info["video"]["width"])
+            slide_height = pixels_to_points(video_info["video"]["height"])
             presentation.PageSetup.SlideWidth = slide_width
             presentation.PageSetup.SlideHeight = slide_height
-            
+
             slide = presentation.Slides.Add(1, 12)  # 12 is ppLayoutBlank
-            print(f"Presentation and slide created in {time.time() - start_time:.2f} seconds")
+            print(
+                f"Presentation and slide created in {time.time() - start_time:.2f} seconds"
+            )
 
             # Constants for animations
             ppEffectFade = 1793  # Correct enum value for Fade effect
@@ -96,8 +128,10 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             shapes = []
 
             # Layout settings
-            margin = pixels_to_points(layout_settings['slide']['margin'])
-            img_width = slide_width * video_info['layout']['image_width_percentage'] / 100
+            margin = pixels_to_points(layout_settings["slide"]["margin"])
+            img_width = (
+                slide_width * video_info["layout"]["image_width_percentage"] / 100
+            )
             content_width = slide_width - img_width - margin * 2
 
             # Add image placeholder
@@ -106,7 +140,7 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
                 slide_width - img_width,
                 0,
                 img_width,
-                slide_height
+                slide_height,
             )
             img_placeholder.Fill.ForeColor.RGB = 13421772  # Light gray
             img_placeholder.Line.Visible = False  # Remove border
@@ -116,58 +150,94 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             current_top = margin
 
             # Add VIDEO COLLECTION TITLE
-            collection_title = add_textbox(
-                slide, "VIDEO COLLECTION TITLE", 
-                margin, current_top, content_width,
-                layout_settings['collection_title']
+            collection_title_height = pixels_to_points(40)
+            collection_title = add_textbox_with_dynamic_font(
+                slide,
+                "VIDEO COLLECTION TITLE",
+                margin,
+                current_top,
+                content_width,
+                collection_title_height,
+                layout_settings["collection_title"],
             )
-            collection_title.Name = "CollectionTitle"
-            shapes.append(collection_title)
-            current_top += collection_title.Height + pixels_to_points(20)
+            if collection_title is not None:
+                collection_title.Name = "CollectionTitle"
+                shapes.append(collection_title)
+                current_top += collection_title_height + pixels_to_points(20)
+            else:
+                print("Error: Failed to create collection title")
 
-            # Add title
-            title_box = add_textbox(
+            
+            
+            # Add title with dynamic sizing
+            title_height = pixels_to_points(240)  # Increased height for title
+            title_settings = layout_settings['title'].copy()
+            title_settings['dynamic_sizing'] = True
+            title_settings['min_font_size'] = 43
+            title_settings['max_font_size'] = 100
+
+            title_box = add_textbox_with_dynamic_font(
                 slide, video_info['intro']['title'],
-                margin, current_top, content_width,
-                layout_settings['title']
+                margin, current_top, content_width, title_height,
+                title_settings
             )
-            title_box.Name = "TitleBox"
-            shapes.append(title_box)
-            current_top += title_box.Height + pixels_to_points(20)
-
+            if title_box is not None:
+                title_box.Name = "TitleBox"
+                shapes.append(title_box)
+                current_top += title_height + pixels_to_points(20)
+            else:
+                print("Error: Failed to create title box")
+                
             # Add subtitle
-            subtitle_box = add_textbox(
-                slide, video_info['intro']['subtitle'],
-                margin, current_top, content_width,
-                layout_settings['subtitle']
+            subtitle_height = pixels_to_points(80)  # Increased height for subtitle
+            subtitle_box = add_textbox_with_dynamic_font(
+                slide,
+                video_info["intro"]["subtitle"],
+                margin,
+                current_top,
+                content_width,
+                subtitle_height,
+                layout_settings["subtitle"],
             )
-            subtitle_box.Name = "SubtitleBox"
-            shapes.append(subtitle_box)
-            current_top += subtitle_box.Height + pixels_to_points(30)
+            if subtitle_box is not None:
+                subtitle_box.Name = "SubtitleBox"
+                shapes.append(subtitle_box)
+                current_top += subtitle_box.Height + pixels_to_points(
+                    40
+                )  # Increased spacing after subtitle
+            else:
+                print("Error: Failed to create subtitle box")
 
             # Add timestamps
-            for i, timestamp in enumerate(video_info['intro']['timestamps']):
-                ts_box = add_textbox(
-                    slide, timestamp,
-                    margin, current_top, content_width,
-                    layout_settings['timestamps']
+            timestamp_height = pixels_to_points(30)
+            for i, timestamp in enumerate(video_info["intro"]["timestamps"]):
+                ts_box = add_textbox_with_dynamic_font(
+                    slide,
+                    timestamp,
+                    margin,
+                    current_top,
+                    content_width,
+                    timestamp_height,
+                    layout_settings["timestamps"],
                 )
-                ts_box.Name = f"Timestamp{i+1}"
-                shapes.append(ts_box)
-                current_top += ts_box.Height + pixels_to_points(layout_settings['timestamps'].get('spacing', 10))
+                if ts_box is not None:
+                    ts_box.Name = f"Timestamp{i+1}"
+                    shapes.append(ts_box)
+                    current_top += timestamp_height + pixels_to_points(
+                        layout_settings["timestamps"].get("spacing", 10)
+                    )
+                else:
+                    print(f"Error: Failed to create timestamp box {i+1}")
 
             # Apply animations
             for shape in shapes:
                 try:
-                    if shape is not None:
-                        shape.AnimationSettings.EntryEffect = ppEffectFade
-                        shape.AnimationSettings.TextLevelEffect = 1  # Animate as one object
-                        shape.AnimationSettings.Animate = True
-                        print(f"Applied animation to {shape.Name}")
-                    else:
-                        print(f"Skipping animation for null shape")
+                    shape.AnimationSettings.EntryEffect = ppEffectFade
+                    shape.AnimationSettings.TextLevelEffect = 1  # Animate as one object
+                    shape.AnimationSettings.Animate = True
+                    print(f"Applied animation to {shape.Name}")
                 except Exception as e:
-                    print(f"Error applying animation to {shape.Name}: {str(e)}")
+                    print(f"Error applying animation to shape: {str(e)}")
 
             start_time = time.time()
             presentation.SaveAs(os.path.abspath(output_path))
@@ -200,6 +270,7 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
     except Exception as outer_error:
         print(f"An outer error occurred: {str(outer_error)}")
         print(traceback.format_exc())
+
 
 if __name__ == "__main__":
     video_info_path = "video_info.json"
