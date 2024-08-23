@@ -24,27 +24,76 @@ def force_terminate_powerpoint():
                 proc.kill()
 
 def calculate_font_size_from_character_count(char_count):
-    if char_count <= 20:
-        return 100
-    elif char_count <= 30:
-        return 87
-    elif char_count <= 50:
-        return 60
-    elif char_count <= 90:
-        return 48
-    else:
-        return 43
+    print(f"Character count: {char_count}")
+    
+    # Define the breakpoints and corresponding font sizes
+    breakpoints = [
+        (25, 100),
+        (30, 90),
+        (40, 69),
+        (50, 60),
+        (70, 56),
+        (80, 50),
+        (90, 48),
+        (float('inf'), 43)  # For any value above 90
+    ]
+    
+    # Find the appropriate range for the character count
+    for i, (max_chars, font_size) in enumerate(breakpoints):
+        if char_count <= max_chars:
+            if i == 0:  # If it's the first breakpoint, return the font size directly
+                return font_size
+            
+            # Interpolate between this breakpoint and the previous one
+            prev_max_chars, prev_font_size = breakpoints[i-1]
+            char_range = max_chars - prev_max_chars
+            font_range = prev_font_size - font_size
+            
+            # Calculate the interpolated font size
+            interpolated_size = prev_font_size - (char_count - prev_max_chars) * (font_range / char_range)
+            return round(interpolated_size)
+    
+    # This line should never be reached due to the float('inf') in the breakpoints,
+    # but we'll include it as a fallback
+    return 43
+
 
 def calculate_optimal_font_size(slide, text, max_width, max_height, font_name, min_font_size, max_font_size):
-    char_count = len(text)
-    font_size = calculate_font_size_from_character_count(char_count)
-    print(f"Calculated font size based on {char_count} characters: {font_size}")
-    
-    # Ensure the font size is within the specified min and max
-    final_size = max(min(font_size, max_font_size), min_font_size)
-    print(f"Final font size (after min/max adjustment): {final_size}")
-    return final_size
+    shape = slide.Shapes.AddTextbox(1, 0, 0, max_width, max_height)
+    text_frame = shape.TextFrame
+    text_frame.WordWrap = True
+    text_frame.AutoSize = 0  # Disable auto-sizing
+    text_range = text_frame.TextRange
+    text_range.Text = text
+    text_range.ParagraphFormat.Alignment = 1  # Center align
 
+    def measure_text(font_size):
+        text_range.Font.Size = font_size
+        text_range.Font.Name = font_name
+        return text_frame.TextRange.BoundHeight, text_frame.TextRange.BoundWidth
+
+    # Binary search to find the optimal font size
+    low, high = min_font_size, max_font_size
+    optimal_size = min_font_size
+    while low <= high:
+        mid = (low + high) // 2
+        height, width = measure_text(mid)
+        if height <= max_height and width <= max_width:
+            optimal_size = mid
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    # Fine-tune: decrease font size until it fits
+    while optimal_size > min_font_size:
+        height, width = measure_text(optimal_size)
+        if height <= max_height and width <= max_width:
+            break
+        optimal_size -= 1
+
+    shape.Delete()
+    print(f"Optimal font size: {optimal_size}")
+    return optimal_size
 
 def add_textbox_with_dynamic_font(slide, text, left, top, width, height, settings):
     try:
@@ -88,8 +137,7 @@ def add_textbox_with_dynamic_font(slide, text, left, top, width, height, setting
     except Exception as e:
         print(f"Error in add_textbox_with_dynamic_font: {str(e)}")
         print(traceback.format_exc())
-        return None
-      
+        return None 
 
 def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
