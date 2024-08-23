@@ -1,246 +1,209 @@
-import json
 import win32com.client
+import json
 import os
 import time
-import pythoncom
-import threading
-import win32gui
-import win32con
+import sys
+import gc
+import psutil
+import traceback
 
 
-def read_video_info(json_file):
-    with open(json_file, "r") as f:
-        data = json.load(f)
-
-    video_info = data["video"]
-    video_info["frame_rate"] = eval(f"{video_info['frame_rate']}/1")  # Convert to float
-
-    return {
-        "video": video_info,
-        "intro": data["intro"],
-        "fonts": data["fonts"],
-        "layout": data["layout"],
-    }
+def pixels_to_points(pixels):
+    return pixels * 72 / 96  # Convert pixels to points
 
 
-def minimize_powerpoint(powerpoint):
-    time.sleep(1)
-    hwnd = win32gui.FindWindow(None, "PowerPoint")
-    if hwnd:
-        win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+def time_operation(operation_name):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            print(f"{operation_name} took {end_time - start_time:.2f} seconds")
+            return result
+        return wrapper
+    return decorator
 
 
-def create_presentation(video_info):
-    pythoncom.CoInitialize()
-    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
-    powerpoint.Visible = True
+def force_terminate_powerpoint():
+    for proc in psutil.process_iter(['name']):
+        if proc.info['name'] == 'POWERPNT.EXE':
+            print(f"Forcefully terminating PowerPoint process (PID: {proc.pid})")
+            proc.terminate()
+            proc.wait(timeout=5)
+
+
+def add_textbox(slide, text, left, top, width, settings):
     try:
-        threading.Thread(
-            target=minimize_powerpoint, args=(powerpoint,), daemon=True
-        ).start()
-
-        presentation = powerpoint.Presentations.Add()
-
-        # Set slide size to match video dimensions
-        presentation.PageSetup.SlideWidth = video_info["video"]["width"]
-        presentation.PageSetup.SlideHeight = video_info["video"]["height"]
-
-        slide = presentation.Slides.Add(1, 12)  # 12 corresponds to ppLayoutBlank
-
-        # Set background color to white
-        slide.Background.Fill.ForeColor.RGB = 255 + 255 * 256 + 255 * 256 * 256
-
-        # Calculate dimensions
-        margin = video_info["layout"]["margin"]
-        padding = 50
-        image_width = (
-            video_info["video"]["width"]
-            * video_info["layout"]["image_width_percentage"]
-            / 100
-        )
-        text_width = video_info["video"]["width"] - image_width - margin - padding * 2
-
-        # Add elements to the slide
-        elements = []
-
-        # Add image placeholder
-        img_placeholder = slide.Shapes.AddShape(
-            1,
-            video_info["video"]["width"] - image_width,
-            0,
-            image_width,
-            video_info["video"]["height"],
-        )
-        img_placeholder.Fill.ForeColor.RGB = (
-            200 + 200 * 256 + 200 * 256 * 256
-        )  # Light gray
-        elements.append(img_placeholder)
-
-        # Add title
-        title_box = slide.Shapes.AddTextbox(
-            1, margin + padding, margin + padding, text_width, 120
-        )
-        title_box.TextFrame.TextRange.Text = video_info["intro"]["title"]
-        title_box.TextFrame.TextRange.ParagraphFormat.Alignment = (
-            1  # 1 corresponds to ppAlignLeft
-        )
-        title_box.TextFrame.TextRange.Font.Name = video_info["fonts"]["title"]["name"]
-        title_box.TextFrame.TextRange.Font.Size = video_info["fonts"]["title"]["size"]
-        title_box.TextFrame.TextRange.Font.Color.RGB = int(
-            video_info["fonts"]["title"]["color"].replace("#", "0x"), 16
-        )
-        elements.append(title_box)
-
-        # Add subtitle
-        subtitle_box = slide.Shapes.AddTextbox(
-            1, margin + padding, margin + padding + 140, text_width, 60
-        )
-        subtitle_box.TextFrame.TextRange.Text = video_info["intro"]["subtitle"]
-        subtitle_box.TextFrame.TextRange.ParagraphFormat.Alignment = 1
-        subtitle_box.TextFrame.TextRange.Font.Name = video_info["fonts"]["subtitle"][
-            "name"
-        ]
-        subtitle_box.TextFrame.TextRange.Font.Size = video_info["fonts"]["subtitle"][
-            "size"
-        ]
-        subtitle_box.TextFrame.TextRange.Font.Color.RGB = int(
-            video_info["fonts"]["subtitle"]["color"].replace("#", "0x"), 16
-        )
-        elements.append(subtitle_box)
-
-        # Add timestamps
-        for i, timestamp in enumerate(video_info["intro"]["timestamps"]):
-            ts_box = slide.Shapes.AddTextbox(
-                1, margin + padding, margin + padding + 220 + i * 40, text_width, 30
-            )
-            ts_box.TextFrame.TextRange.Text = timestamp
-            ts_box.TextFrame.TextRange.ParagraphFormat.Alignment = 1
-            ts_box.TextFrame.TextRange.Font.Name = video_info["fonts"]["timestamps"][
-                "name"
-            ]
-            ts_box.TextFrame.TextRange.Font.Size = video_info["fonts"]["timestamps"][
-                "size"
-            ]
-            ts_box.TextFrame.TextRange.Font.Color.RGB = int(
-                video_info["fonts"]["timestamps"]["color"].replace("#", "0x"), 16
-            )
-            elements.append(ts_box)
-
-        return powerpoint, presentation, slide, elements
-    except Exception as e:
-        print(f"An error occurred while creating the presentation: {str(e)}")
-        if powerpoint:
-            powerpoint.Quit()
-        pythoncom.CoUninitialize()
-        raise
-
-
-import win32com.client
-
-def add_animations(slide, elements):
-    try:
-        # Constants
-        ppEffectFade = 2  # Numeric value for fade effect
-        ppAnimateByAllLevels = 2
-        ppTimingWithPrevious = 2
-
-        for i, element in enumerate(elements):
-            # Set animation settings for the shape
-            animation_settings = element.AnimationSettings
-            animation_settings.TextLevelEffect = ppAnimateByAllLevels
-            animation_settings.Animate = True
-
-            # Add a fade effect to each element
-            anim = slide.TimeLine.MainSequence.AddEffect(
-                element,
-                ppEffectFade,  # Using numeric value for fade effect
-                0,  # Entry
-                ppTimingWithPrevious
-            )
-            
-            # Set the timing
-            anim.Timing.Duration = 0.5  # 0.5 second fade duration
-            
-            if i == 0:
-                # Start the first animation immediately
-                anim.Timing.TriggerDelayTime = 0
-            else:
-                # Slightly overlap subsequent animations
-                anim.Timing.TriggerDelayTime = 0.25 * i  # 0.25 second intervals
-
-        print("Animations added successfully")
+        height = pixels_to_points(settings.get('height', settings['font_size'] * 1.5))
         
+        textbox = slide.Shapes.AddTextbox(1, left, top, width, height)
+        textframe = textbox.TextFrame
+        textframe.TextRange.Text = text
+        textframe.TextRange.ParagraphFormat.Alignment = 1  # ppAlignLeft
+        textframe.VerticalAnchor = 1  # ppAnchorTop
+        textframe.WordWrap = True
+
+        font = textframe.TextRange.Font
+        font.Name = settings['font_name']
+        font.Size = settings['font_size']
+        font.Color.RGB = settings['color']
+        
+        # Set line spacing
+        paragraph_format = textframe.TextRange.ParagraphFormat
+        if 'space_within' in settings:
+            paragraph_format.SpaceWithin = settings['space_within']
+
+        return textbox
     except Exception as e:
-        print(f"An error occurred while adding animations: {str(e)}")
-        raise
+        print(f"Error in add_textbox: {str(e)}")
+        print(traceback.format_exc())
+        return None
     
-	
-def export_to_video(presentation, video_path, video_info):
+       
+@time_operation("Total execution")
+def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
-        # Delete existing video file if it exists
-        if os.path.exists(video_path):
-            os.remove(video_path)
-            print(f"Existing video file deleted: {video_path}")
+        with open(video_info_path, 'r') as file:
+            video_info = json.load(file)
+        
+        with open(layout_settings_path, 'r') as file:
+            layout_settings = json.load(file)
 
-        frame_rate = min(30, video_info["video"]["frame_rate"])
-        quality = 95
+        powerpoint = None
+        presentation = None
 
-        presentation.CreateVideo(
-            video_path, -1, 15, video_info["video"]["height"], frame_rate, quality
-        )
-        print(f"Video export initiated. File will be saved to: {video_path}")
+        try:
+            start_time = time.time()
+            powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+            powerpoint.Visible = True  # Keep PowerPoint visible
+            print(f"PowerPoint started in {time.time() - start_time:.2f} seconds")
 
-        max_wait_time = 300
-        start_time = time.time()
-        last_size = -1
+            start_time = time.time()
+            presentation = powerpoint.Presentations.Add()
+            
+            # Set slide size
+            slide_width = pixels_to_points(video_info['video']['width'])
+            slide_height = pixels_to_points(video_info['video']['height'])
+            presentation.PageSetup.SlideWidth = slide_width
+            presentation.PageSetup.SlideHeight = slide_height
+            
+            slide = presentation.Slides.Add(1, 12)  # 12 is ppLayoutBlank
+            print(f"Presentation and slide created in {time.time() - start_time:.2f} seconds")
 
-        while True:
-            if os.path.exists(video_path):
-                current_size = os.path.getsize(video_path)
-                if current_size > 0 and current_size == last_size:
-                    print(f"Video file created and fully written at: {video_path}")
-                    break
-                last_size = current_size
+            # Constants for animations
+            ppEffectFade = 1793  # Correct enum value for Fade effect
 
-            if time.time() - start_time > max_wait_time:
-                raise TimeoutError("Video export timed out after 5 minutes")
+            shapes = []
 
-            time.sleep(1)
+            # Layout settings
+            margin = pixels_to_points(layout_settings['slide']['margin'])
+            img_width = slide_width * video_info['layout']['image_width_percentage'] / 100
+            content_width = slide_width - img_width - margin * 2
 
-    except Exception as e:
-        print(f"An error occurred during video export: {str(e)}")
-        raise
+            # Add image placeholder
+            img_placeholder = slide.Shapes.AddShape(
+                1,  # msoShapeRectangle
+                slide_width - img_width,
+                0,
+                img_width,
+                slide_height
+            )
+            img_placeholder.Fill.ForeColor.RGB = 13421772  # Light gray
+            img_placeholder.Line.Visible = False  # Remove border
+            img_placeholder.Name = "ImagePlaceholder"
+            shapes.append(img_placeholder)
 
-def main(json_file_path):
-    video_info = read_video_info(json_file_path)
+            current_top = margin
 
-    powerpoint = None
-    pptx_path = os.path.abspath("intro_test_refined.pptx")
-    try:
-        powerpoint, presentation, slide, elements = create_presentation(video_info)
-        add_animations(slide, elements)
+            # Add VIDEO COLLECTION TITLE
+            collection_title = add_textbox(
+                slide, "VIDEO COLLECTION TITLE", 
+                margin, current_top, content_width,
+                layout_settings['collection_title']
+            )
+            collection_title.Name = "CollectionTitle"
+            shapes.append(collection_title)
+            current_top += collection_title.Height + pixels_to_points(20)
 
-        presentation.SaveAs(pptx_path)
-        print(f"Presentation saved to: {pptx_path}")
+            # Add title
+            title_box = add_textbox(
+                slide, video_info['intro']['title'],
+                margin, current_top, content_width,
+                layout_settings['title']
+            )
+            title_box.Name = "TitleBox"
+            shapes.append(title_box)
+            current_top += title_box.Height + pixels_to_points(20)
 
-        video_path = os.path.abspath("intro_test_video_refined.mp4")
-        export_to_video(presentation, video_path, video_info)
+            # Add subtitle
+            subtitle_box = add_textbox(
+                slide, video_info['intro']['subtitle'],
+                margin, current_top, content_width,
+                layout_settings['subtitle']
+            )
+            subtitle_box.Name = "SubtitleBox"
+            shapes.append(subtitle_box)
+            current_top += subtitle_box.Height + pixels_to_points(30)
 
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
+            # Add timestamps
+            for i, timestamp in enumerate(video_info['intro']['timestamps']):
+                ts_box = add_textbox(
+                    slide, timestamp,
+                    margin, current_top, content_width,
+                    layout_settings['timestamps']
+                )
+                ts_box.Name = f"Timestamp{i+1}"
+                shapes.append(ts_box)
+                current_top += ts_box.Height + pixels_to_points(layout_settings['timestamps'].get('spacing', 10))
 
-    finally:
-        if powerpoint:
-            powerpoint.Quit()
-            pythoncom.CoUninitialize()
+            # Apply animations
+            for shape in shapes:
+                try:
+                    if shape is not None:
+                        shape.AnimationSettings.EntryEffect = ppEffectFade
+                        shape.AnimationSettings.TextLevelEffect = 1  # Animate as one object
+                        shape.AnimationSettings.Animate = True
+                        print(f"Applied animation to {shape.Name}")
+                    else:
+                        print(f"Skipping animation for null shape")
+                except Exception as e:
+                    print(f"Error applying animation to {shape.Name}: {str(e)}")
 
-        # Delete the PowerPoint file
-        if os.path.exists(pptx_path):
-            os.remove(pptx_path)
-            print(f"PowerPoint file deleted: {pptx_path}")
+            start_time = time.time()
+            presentation.SaveAs(os.path.abspath(output_path))
+            print(f"Presentation saved in {time.time() - start_time:.2f} seconds")
 
-    print("Script completed.")
+        except Exception as e:
+            print(f"An error occurred during presentation creation: {str(e)}")
+            print(traceback.format_exc())
+        finally:
+            if presentation:
+                try:
+                    presentation.Close()
+                except Exception as close_error:
+                    print(f"Error closing presentation: {str(close_error)}")
+            if powerpoint:
+                try:
+                    powerpoint.Quit()
+                except Exception as quit_error:
+                    print(f"Error quitting PowerPoint: {str(quit_error)}")
+            print("PowerPoint closed")
+
+            # Force COM objects to be released
+            del presentation
+            del powerpoint
+            gc.collect()
+
+            # Check if PowerPoint is still running and force terminate if necessary
+            force_terminate_powerpoint()
+
+    except Exception as outer_error:
+        print(f"An outer error occurred: {str(outer_error)}")
+        print(traceback.format_exc())
 
 if __name__ == "__main__":
-    json_file_path = "video_info.json"
-    main(json_file_path)
+    video_info_path = "video_info.json"
+    layout_settings_path = "layout_settings.json"
+    output_path = "intro_test.pptx"
+    create_presentation(video_info_path, layout_settings_path, output_path)
+    print("Script completed.")

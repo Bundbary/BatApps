@@ -1,0 +1,30 @@
+{
+	"slide": {
+	  "margin": 50
+	},
+	"collection_title": {
+	  "font_name": "Energy Display",
+	  "font_size": 30,
+	  "color": 16711827,
+	  "space_within": 1.2
+	},
+	"title": {
+	  "font_name": "Energy Display",
+	  "font_size": 100,
+	  "color": 16711827,
+	  "space_within": 0.8
+	},
+	"subtitle": {
+	  "font_name": "Energy Regular",
+	  "font_size": 23,
+	  "color": 0,
+	  "space_within": 1
+	},
+	"timestamps": {
+	  "font_name": "Energy Bold",
+	  "font_size": 22,
+	  "color": 0,
+	  "space_within": 1.3,
+	  "spacing": 35
+	}
+  }
