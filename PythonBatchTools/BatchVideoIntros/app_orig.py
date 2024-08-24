@@ -20,26 +20,17 @@ def pixels_to_points(pixels):
     return pixels * 72 / 96  # Convert pixels to points
 
 
-# def force_terminate_powerpoint():
-#     for proc in psutil.process_iter(["name"]):
-#         if proc.info["name"] == "POWERPNT.EXE":
-#             logger.info(f"Forcefully terminating PowerPoint process (PID: {proc.pid})")
-#             try:
-#                 proc.terminate()
-#                 proc.wait(timeout=5)
-#             except psutil.TimeoutExpired:
-#                 proc.kill()
-
 def force_terminate_powerpoint():
-    for proc in psutil.process_iter(['name']):
-        if proc.info['name'] == 'POWERPNT.EXE':
+    for proc in psutil.process_iter(["name"]):
+        if proc.info["name"] == "POWERPNT.EXE":
             logger.info(f"Forcefully terminating PowerPoint process (PID: {proc.pid})")
             try:
-                proc.kill()  # Use kill instead of terminate for immediate termination
-            except psutil.NoSuchProcess:
-                pass  # Process already terminated
-            except Exception as e:
-                logger.error(f"Error terminating PowerPoint process: {str(e)}")
+                proc.terminate()
+                proc.wait(timeout=5)
+            except psutil.TimeoutExpired:
+                proc.kill()
+
+
 def calculate_font_size_from_character_count(char_count):
     logger.info(f"Character count: {char_count}")
 
@@ -287,7 +278,7 @@ def build_timestamp_with_dots(slide, text, time_str, max_width, font_name, font_
 
     return formatted_text
 
-def create_presentation(video_info_path, layout_settings_path, output_pptx_path, output_video_path):
+def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
         with open(video_info_path, "r") as file:
             video_info = json.load(file)
@@ -452,96 +443,42 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
 
             logger.info("Saving presentation")
             start_time = time.time()
-            presentation.SaveAs(os.path.abspath(output_pptx_path))
+            presentation.SaveAs(os.path.abspath(output_path))
             logger.info(f"Presentation saved in {time.time() - start_time:.2f} seconds")
-    
-            # Export to video
-            logger.info("Exporting presentation to video")
-            export_to_video(presentation, output_video_path)
-
-            # Force terminate PowerPoint immediately after video export
-            logger.info("Force terminating PowerPoint")
-            force_terminate_powerpoint()
 
         except Exception as e:
-            logger.error(f"An error occurred during presentation creation or video export: {str(e)}")
+            logger.error(f"An error occurred during presentation creation: {str(e)}")
             logger.error(traceback.format_exc())
-            # Force terminate PowerPoint in case of an exception
-            logger.info("Force terminating PowerPoint due to exception")
-            force_terminate_powerpoint()
         finally:
-            # These operations might not be necessary now, but we'll keep them as a safeguard
             if presentation:
                 try:
                     presentation.Close()
-                except Exception:
-                    pass
+                except Exception as close_error:
+                    logger.error(f"Error closing presentation: {str(close_error)}")
             if powerpoint:
                 try:
                     powerpoint.Quit()
-                except Exception:
-                    pass
-            logger.info("PowerPoint handling completed")
+                except Exception as quit_error:
+                    logger.error(f"Error quitting PowerPoint: {str(quit_error)}")
+            logger.info("PowerPoint closed")
 
             # Force COM objects to be released
             del presentation
             del powerpoint
             gc.collect()
 
+            # Check if PowerPoint is still running and force terminate if necessary
+            force_terminate_powerpoint()
+
     except Exception as outer_error:
         logger.error(f"An outer error occurred: {str(outer_error)}")
         logger.error(traceback.format_exc())
 
-    logger.info("Presentation creation and video export process completed")
-
-
-
-import os
-
-def export_to_video(presentation, output_path):
-    try:
-        # Ensure the output path is absolute
-        abs_output_path = os.path.abspath(output_path)
-        
-        # Get the directory of the output path
-        output_dir = os.path.dirname(abs_output_path)
-        
-        # Ensure the directory exists
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Check if the file already exists and delete it if it does
-        if os.path.exists(abs_output_path):
-            logger.info(f"Existing video file found. Deleting: {abs_output_path}")
-            os.remove(abs_output_path)
-        
-        # Set video export settings
-        presentation.CreateVideo(abs_output_path)
-        
-        logger.info(f"Starting video export to {abs_output_path}...")
-        
-        # Check for file existence and size every second
-        start_time = time.time()
-        while True:
-            if os.path.exists(abs_output_path) and os.path.getsize(abs_output_path) > 0:
-                logger.info(f"Video export completed successfully: {abs_output_path}")
-                return True
-            
-            if time.time() - start_time > 300:  # 5 minutes timeout
-                logger.error("Video export timed out after 5 minutes")
-                return False
-            
-            time.sleep(1)  # Wait for 1 second before checking again
-        
-    except Exception as e:
-        logger.error(f"Error during video export: {str(e)}")
-        logger.error(traceback.format_exc())
-        return False
+    logger.info("Presentation creation process completed")
     
-
 if __name__ == "__main__":
     video_info_path = "video_info.json"
     layout_settings_path = "layout_settings.json"
-    output_pptx_path = "intro_test.pptx"
-    output_video_path = "intro_test.mp4"  # This will be in the same folder as the script
-    create_presentation(video_info_path, layout_settings_path, output_pptx_path, output_video_path)
+    output_path = "intro_test.pptx"
+    create_presentation(video_info_path, layout_settings_path, output_path)
     logger.info("Script completed.")
