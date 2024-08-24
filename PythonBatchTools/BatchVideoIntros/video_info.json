@@ -14,14 +14,29 @@
         "color_primaries": "bt709"
     },
     "intro": {
-        "title": "012354  ",
+        "title": "012354",
         "subtitle": "Supporting text describing the video will go in this place. Maybe other general instructions.",
         "timestamps": [
-            "Timestamp 1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-            "Timestamp 2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-            "Timestamp 3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-            "Timestamp 4 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00",
-            "Timestamp 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . 00:00"
+            {
+                "text": "Short",
+                "time": "00:10"
+            },
+            {
+                "text": "A bit longer timestamp",
+                "time": "00:20"
+            },
+            {
+                "text": "This is a much longer timestamp text",
+                "time": "00:30"
+            },
+            {
+                "text": "Medium length",
+                "time": "00:40"
+            },
+            {
+                "text": "Another long timestamp text here",
+                "time": "00:50"
+            }
         ]
     },
     "fonts": {

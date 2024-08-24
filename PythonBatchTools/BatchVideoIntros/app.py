@@ -10,11 +10,15 @@ import math
 import logging
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
 
 def pixels_to_points(pixels):
     return pixels * 72 / 96  # Convert pixels to points
+
 
 def force_terminate_powerpoint():
     for proc in psutil.process_iter(["name"]):
@@ -26,9 +30,10 @@ def force_terminate_powerpoint():
             except psutil.TimeoutExpired:
                 proc.kill()
 
+
 def calculate_font_size_from_character_count(char_count):
     logger.info(f"Character count: {char_count}")
-    
+
     # Define the breakpoints and corresponding font sizes
     breakpoints = [
         (25, 100),
@@ -38,29 +43,34 @@ def calculate_font_size_from_character_count(char_count):
         (70, 56),
         (80, 50),
         (90, 48),
-        (float('inf'), 43)  # For any value above 90
+        (float("inf"), 43),  # For any value above 90
     ]
-    
+
     # Find the appropriate range for the character count
     for i, (max_chars, font_size) in enumerate(breakpoints):
         if char_count <= max_chars:
             if i == 0:  # If it's the first breakpoint, return the font size directly
                 return font_size
-            
+
             # Interpolate between this breakpoint and the previous one
-            prev_max_chars, prev_font_size = breakpoints[i-1]
+            prev_max_chars, prev_font_size = breakpoints[i - 1]
             char_range = max_chars - prev_max_chars
             font_range = prev_font_size - font_size
-            
+
             # Calculate the interpolated font size
-            interpolated_size = prev_font_size - (char_count - prev_max_chars) * (font_range / char_range)
+            interpolated_size = prev_font_size - (char_count - prev_max_chars) * (
+                font_range / char_range
+            )
             return round(interpolated_size)
-    
+
     # This line should never be reached due to the float('inf') in the breakpoints,
     # but we'll include it as a fallback
     return 43
 
-def calculate_optimal_font_size(slide, text, max_width, max_height, font_name, min_font_size, max_font_size):
+
+def calculate_optimal_font_size(
+    slide, text, max_width, max_height, font_name, min_font_size, max_font_size
+):
     shape = slide.Shapes.AddTextbox(1, 0, 0, max_width, max_height)
     text_frame = shape.TextFrame
     text_frame.WordWrap = True
@@ -97,34 +107,67 @@ def calculate_optimal_font_size(slide, text, max_width, max_height, font_name, m
     logger.info(f"Optimal font size: {optimal_size}")
     return optimal_size
 
-def add_textbox_with_dynamic_font(slide, text, left, top, width, height, settings):
+
+def format_timestamp(text, time, max_width, font_name, font_size, slide):
+    # Helper function to measure text width
+    def measure_text_width(text, font_name, font_size):
+        temp_shape = slide.Shapes.AddTextbox(1, 0, 0, 100, 20)
+        temp_shape.TextFrame.TextRange.Text = text
+        temp_shape.TextFrame.TextRange.Font.Name = font_name
+        temp_shape.TextFrame.TextRange.Font.Size = font_size
+        width = temp_shape.TextFrame.TextRange.BoundWidth
+        temp_shape.Delete()
+        return width
+
+    # Measure the width of the text and time
+    text_width = measure_text_width(text, font_name, font_size)
+    time_width = measure_text_width(time, font_name, font_size)
+
+    # Calculate available space for dots
+    available_space = max_width - text_width - time_width
+
+    # Calculate the number of dots that can fit
+    dot_width = measure_text_width(".", font_name, font_size)
+    num_dots = max(0, int(available_space / dot_width))
+
+    # Construct the formatted timestamp
+    formatted_timestamp = f"{text} {' ' * num_dots} {time}"
+
+    return formatted_timestamp
+
+def add_textbox_with_dynamic_font(slide, text, left, top, width, height, settings, disable_word_wrap=False, justify=False):
     try:
-        if settings.get('dynamic_sizing', False):
+        if settings.get("dynamic_sizing", False):
             font_size = calculate_optimal_font_size(
-                slide, text, width, height, 
-                settings['font_name'], 
-                settings.get('min_font_size', 43), 
-                settings.get('max_font_size', 100)
+                slide,
+                text,
+                width,
+                height,
+                settings["font_name"],
+                settings.get("min_font_size", 43),
+                settings.get("max_font_size", 100),
             )
         else:
-            font_size = settings['font_size']
+            font_size = settings["font_size"]
 
         logger.info(f"Adding textbox with font size: {font_size}")
 
         textbox = slide.Shapes.AddTextbox(1, left, top, width, height)
         textframe = textbox.TextFrame
         textframe.AutoSize = 0  # Disable auto-sizing
-        textframe.WordWrap = True
+        textframe.WordWrap = not disable_word_wrap  # Set word wrap based on parameter
+
 
         textrange = textframe.TextRange
         textrange.Text = text
-        textrange.ParagraphFormat.Alignment = 1  # Center align
-        textrange.ParagraphFormat.SpaceWithin = settings.get('space_within', 1.0)
+        textrange.ParagraphFormat.Alignment = 3 if justify else 1  # 3 for justified, 1 for center align
+        textrange.ParagraphFormat.SpaceWithin = settings.get("space_within", 1.0)
+
 
         font = textrange.Font
-        font.Name = settings['font_name']
+        font.Name = settings["font_name"]
         font.Size = font_size
-        font.Color.RGB = settings['color']
+        font.Color.RGB = settings["color"]
 
         # Adjust vertical alignment
         text_height = textframe.TextRange.BoundHeight
@@ -139,40 +182,46 @@ def add_textbox_with_dynamic_font(slide, text, left, top, width, height, setting
     except Exception as e:
         logger.error(f"Error in add_textbox_with_dynamic_font: {str(e)}")
         logger.error(traceback.format_exc())
-        return None 
-
+        return None
+    
 def apply_animations(slide, shapes, animation_settings):
     try:
         sequence = slide.TimeLine.MainSequence
-        
+
         # Constants for animation triggers
         ppEffectOnClick = 1
         ppEffectWithPrevious = 2
         ppEffectAfterPrevious = 3
 
-        default_settings = animation_settings.get('default', {})
-        default_effect = default_settings.get('effect', 10)  # Fade-in effect
-        default_delay = default_settings.get('delay', 0.5)
-        default_duration = default_settings.get('duration', 0.5)
-        text_display_duration = animation_settings.get('text_display_duration', 5)  # New setting
+        default_settings = animation_settings.get("default", {})
+        default_effect = default_settings.get("effect", 10)  # Fade-in effect
+        default_delay = default_settings.get("delay", 0.5)
+        default_duration = default_settings.get("duration", 0.5)
+        text_display_duration = animation_settings.get(
+            "text_display_duration", 5
+        )  # New setting
 
         total_animation_time = 0
 
         for i, shape in enumerate(shapes):
             # Determine which animation settings to use
-            if shape.Name.startswith('Timestamp'):
-                specific_settings = animation_settings.get('timestamps', default_settings)
+            if shape.Name.startswith("Timestamp"):
+                specific_settings = animation_settings.get(
+                    "timestamps", default_settings
+                )
             else:
                 specific_settings = default_settings
 
-            effect_type = specific_settings.get('effect', default_effect)
-            delay = specific_settings.get('delay', default_delay)
-            duration = specific_settings.get('duration', default_duration)
+            effect_type = specific_settings.get("effect", default_effect)
+            delay = specific_settings.get("delay", default_delay)
+            duration = specific_settings.get("duration", default_duration)
 
             # Add effect to the shape
-            effect = sequence.AddEffect(shape, effect_type, trigger=ppEffectAfterPrevious)
+            effect = sequence.AddEffect(
+                shape, effect_type, trigger=ppEffectAfterPrevious
+            )
             effect.Timing.Duration = duration
-            
+
             # Set delay between animations
             if i > 0:
                 effect.Timing.TriggerDelayTime = delay
@@ -190,12 +239,49 @@ def apply_animations(slide, shapes, animation_settings):
         logger.info(f"Applied automatic animations to {len(shapes)} shapes")
         logger.info(f"Total animation time: {total_animation_time:.2f} seconds")
         logger.info(f"Text display duration: {text_display_duration:.2f} seconds")
-        logger.info(f"Set slide to advance automatically after {total_slide_duration:.2f} seconds")
+        logger.info(
+            f"Set slide to advance automatically after {total_slide_duration:.2f} seconds"
+        )
 
     except Exception as e:
         logger.error(f"Error applying animations: {str(e)}")
         logger.error(traceback.format_exc())
-        
+
+def build_timestamp_with_dots(slide, text, time_str, max_width, font_name, font_size):
+    # Create a single temporary textbox for all measurements
+    temp_shape = slide.Shapes.AddTextbox(1, 0, 0, max_width, 20)
+    temp_shape.TextFrame.WordWrap = False
+    temp_shape.TextFrame.AutoSize = 1  # ppAutoSizeShapeToFitText
+
+    def measure_text_width(text):
+        temp_shape.TextFrame.TextRange.Text = text
+        temp_shape.TextFrame.TextRange.Font.Name = font_name
+        temp_shape.TextFrame.TextRange.Font.Size = font_size
+        return temp_shape.Width
+
+    # Cache widths of common elements
+    text_width = measure_text_width(text)
+    time_width = measure_text_width(time_str)
+    dot_width = measure_text_width(".")
+
+    available_width = max_width - text_width - time_width - dot_width  # Space for one dot (minimum)
+    num_dots = max(1, int(available_width / dot_width))
+
+    formatted_text = f"{text} {'.' * num_dots} {time_str}"
+    
+    while measure_text_width(formatted_text) < max_width:
+        num_dots += 1
+        formatted_text = f"{text} {'.' * num_dots} {time_str}"
+    
+    while measure_text_width(formatted_text) > max_width and num_dots > 1:
+        num_dots -= 1
+        formatted_text = f"{text} {'.' * num_dots} {time_str}"
+
+    # Delete the temporary shape
+    temp_shape.Delete()
+
+    return formatted_text
+
 def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
         with open(video_info_path, "r") as file:
@@ -203,6 +289,8 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
 
         with open(layout_settings_path, "r") as file:
             layout_settings = json.load(file)
+
+        logger.info("Starting presentation creation")
 
         powerpoint = None
         presentation = None
@@ -229,10 +317,10 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
 
             # Layout settings
             margin = pixels_to_points(layout_settings["slide"]["margin"])
-            img_width = (
-                slide_width * video_info["layout"]["image_width_percentage"] / 100
-            )
+            img_width = (slide_width * video_info["layout"]["image_width_percentage"] / 100)
             content_width = slide_width - img_width - margin * 2
+
+            logger.info("Adding main content elements")
 
             # Add image placeholder
             img_placeholder = slide.Shapes.AddShape(
@@ -246,10 +334,12 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             img_placeholder.Line.Visible = False  # Remove border
             img_placeholder.Name = "ImagePlaceholder"
             shapes.append(img_placeholder)
+            logger.info("Added image placeholder")
 
             current_top = margin
 
             # Add VIDEO COLLECTION TITLE
+            logger.info("Adding collection title")
             collection_title_height = pixels_to_points(40)
             collection_title = add_textbox_with_dynamic_font(
                 slide,
@@ -264,10 +354,12 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
                 collection_title.Name = "CollectionTitle"
                 shapes.append(collection_title)
                 current_top += collection_title_height + pixels_to_points(20)
+                logger.info("Collection title added successfully")
             else:
                 logger.error("Error: Failed to create collection title")
-            
+
             # Add title with dynamic sizing
+            logger.info("Adding main title")
             title_height = pixels_to_points(240)  # Increased height for title
             title_settings = layout_settings['title'].copy()
             title_settings['dynamic_sizing'] = True
@@ -275,18 +367,24 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             title_settings['max_font_size'] = 100
 
             title_box = add_textbox_with_dynamic_font(
-                slide, video_info['intro']['title'],
-                margin, current_top, content_width, title_height,
-                title_settings
+                slide,
+                video_info['intro']['title'],
+                margin,
+                current_top,
+                content_width,
+                title_height,
+                title_settings,
             )
             if title_box is not None:
                 title_box.Name = "TitleBox"
                 shapes.append(title_box)
                 current_top += title_height + pixels_to_points(20)
+                logger.info("Main title added successfully")
             else:
                 logger.error("Error: Failed to create title box")
-                
+
             # Add subtitle
+            logger.info("Adding subtitle")
             subtitle_height = pixels_to_points(80)  # Increased height for subtitle
             subtitle_box = add_textbox_with_dynamic_font(
                 slide,
@@ -300,23 +398,36 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             if subtitle_box is not None:
                 subtitle_box.Name = "SubtitleBox"
                 shapes.append(subtitle_box)
-                current_top += subtitle_box.Height + pixels_to_points(
-                    40
-                )  # Increased spacing after subtitle
+                current_top += subtitle_box.Height + pixels_to_points(40)  # Increased spacing after subtitle
+                logger.info("Subtitle added successfully")
             else:
                 logger.error("Error: Failed to create subtitle box")
 
             # Add timestamps
+            logger.info(f"Starting to add {len(video_info['intro']['timestamps'])} timestamps")
             timestamp_height = pixels_to_points(30)
+
             for i, timestamp in enumerate(video_info["intro"]["timestamps"]):
+                logger.info(f"Processing timestamp {i+1}: {timestamp['text']}")
+                formatted_text = build_timestamp_with_dots(
+                    slide,
+                    timestamp["text"],
+                    timestamp["time"],
+                    content_width,
+                    layout_settings["timestamps"]["font_name"],
+                    layout_settings["timestamps"]["font_size"]
+                )
+                logger.info(f"Formatted timestamp {i+1}: {formatted_text}")
                 ts_box = add_textbox_with_dynamic_font(
                     slide,
-                    timestamp,
+                    formatted_text,
                     margin,
                     current_top,
                     content_width,
                     timestamp_height,
                     layout_settings["timestamps"],
+                    disable_word_wrap=True,
+                    justify=True
                 )
                 if ts_box is not None:
                     ts_box.Name = f"Timestamp{i+1}"
@@ -324,12 +435,17 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
                     current_top += timestamp_height + pixels_to_points(
                         layout_settings["timestamps"].get("spacing", 10)
                     )
+                    logger.info(f"Added timestamp {i+1} successfully")
                 else:
                     logger.error(f"Error: Failed to create timestamp box {i+1}")
 
-            # Apply animations
-            apply_animations(slide, shapes, layout_settings.get('animations', {}))
+            logger.info("Finished adding timestamps")
 
+            # Apply animations
+            logger.info("Applying animations")
+            apply_animations(slide, shapes, layout_settings.get("animations", {}))
+
+            logger.info("Saving presentation")
             start_time = time.time()
             presentation.SaveAs(os.path.abspath(output_path))
             logger.info(f"Presentation saved in {time.time() - start_time:.2f} seconds")
@@ -362,6 +478,8 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
         logger.error(f"An outer error occurred: {str(outer_error)}")
         logger.error(traceback.format_exc())
 
+    logger.info("Presentation creation process completed")
+    
 if __name__ == "__main__":
     video_info_path = "video_info.json"
     layout_settings_path = "layout_settings.json"
