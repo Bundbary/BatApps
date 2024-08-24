@@ -1,4 +1,5 @@
 import win32com.client
+from win32com.client import constants as ppConstants
 import json
 import os
 import time
@@ -7,16 +8,19 @@ import gc
 import psutil
 import traceback
 import math
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def pixels_to_points(pixels):
     return pixels * 72 / 96  # Convert pixels to points
 
-
 def force_terminate_powerpoint():
     for proc in psutil.process_iter(["name"]):
         if proc.info["name"] == "POWERPNT.EXE":
-            print(f"Forcefully terminating PowerPoint process (PID: {proc.pid})")
+            logger.info(f"Forcefully terminating PowerPoint process (PID: {proc.pid})")
             try:
                 proc.terminate()
                 proc.wait(timeout=5)
@@ -24,7 +28,7 @@ def force_terminate_powerpoint():
                 proc.kill()
 
 def calculate_font_size_from_character_count(char_count):
-    print(f"Character count: {char_count}")
+    logger.info(f"Character count: {char_count}")
     
     # Define the breakpoints and corresponding font sizes
     breakpoints = [
@@ -56,7 +60,6 @@ def calculate_font_size_from_character_count(char_count):
     # This line should never be reached due to the float('inf') in the breakpoints,
     # but we'll include it as a fallback
     return 43
-
 
 def calculate_optimal_font_size(slide, text, max_width, max_height, font_name, min_font_size, max_font_size):
     shape = slide.Shapes.AddTextbox(1, 0, 0, max_width, max_height)
@@ -92,7 +95,7 @@ def calculate_optimal_font_size(slide, text, max_width, max_height, font_name, m
         optimal_size -= 1
 
     shape.Delete()
-    print(f"Optimal font size: {optimal_size}")
+    logger.info(f"Optimal font size: {optimal_size}")
     return optimal_size
 
 def add_textbox_with_dynamic_font(slide, text, left, top, width, height, settings):
@@ -107,7 +110,7 @@ def add_textbox_with_dynamic_font(slide, text, left, top, width, height, setting
         else:
             font_size = settings['font_size']
 
-        print(f"Adding textbox with font size: {font_size}")
+        logger.info(f"Adding textbox with font size: {font_size}")
 
         textbox = slide.Shapes.AddTextbox(1, left, top, width, height)
         textframe = textbox.TextFrame
@@ -131,13 +134,53 @@ def add_textbox_with_dynamic_font(slide, text, left, top, width, height, setting
         else:
             textframe.MarginTop = 0
 
-        print(f"Final textbox height: {textframe.TextRange.BoundHeight}")
+        logger.info(f"Final textbox height: {textframe.TextRange.BoundHeight}")
 
         return textbox
     except Exception as e:
-        print(f"Error in add_textbox_with_dynamic_font: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error in add_textbox_with_dynamic_font: {str(e)}")
+        logger.error(traceback.format_exc())
         return None 
+
+
+import win32com.client
+
+def apply_animations(slide, shapes, animation_settings):
+    try:
+        sequence = slide.TimeLine.MainSequence
+        
+        effect_type = 10  # Fade-in effect
+        delay = animation_settings.get('delay', 0.5)
+
+        # Constants for animation triggers
+        ppEffectOnClick = 1
+        ppEffectWithPrevious = 2
+        ppEffectAfterPrevious = 3
+
+        for i, shape in enumerate(shapes):
+            # Add fade-in effect to each shape
+            effect = sequence.AddEffect(shape, effect_type, trigger=ppEffectAfterPrevious)
+            effect.Timing.Duration = 0.5  # Duration of fade-in effect
+            
+            # Set delay between animations
+            if i > 0:
+                effect.Timing.TriggerDelayTime = delay
+
+        # Calculate total animation time
+        total_animation_time = len(shapes) * (delay + 0.5)
+
+        # Set slide transition to advance automatically
+        slide.SlideShowTransition.AdvanceOnTime = True
+        slide.SlideShowTransition.AdvanceTime = total_animation_time + 1  # Add 1 second after all animations
+        slide.SlideShowTransition.Duration = 1  # Duration of the transition effect
+
+        logger.info(f"Applied automatic fade-in animations to {len(shapes)} shapes")
+        logger.info(f"Set slide to advance automatically after {total_animation_time + 1} seconds")
+
+    except Exception as e:
+        logger.error(f"Error applying animations: {str(e)}")
+        logger.error(traceback.format_exc())
+        
 
 def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
@@ -154,7 +197,7 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             start_time = time.time()
             powerpoint = win32com.client.Dispatch("PowerPoint.Application")
             powerpoint.Visible = True  # Keep PowerPoint visible
-            print(f"PowerPoint started in {time.time() - start_time:.2f} seconds")
+            logger.info(f"PowerPoint started in {time.time() - start_time:.2f} seconds")
 
             start_time = time.time()
             presentation = powerpoint.Presentations.Add()
@@ -166,12 +209,7 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             presentation.PageSetup.SlideHeight = slide_height
 
             slide = presentation.Slides.Add(1, 12)  # 12 is ppLayoutBlank
-            print(
-                f"Presentation and slide created in {time.time() - start_time:.2f} seconds"
-            )
-
-            # Constants for animations
-            ppEffectFade = 1793  # Correct enum value for Fade effect
+            logger.info(f"Presentation and slide created in {time.time() - start_time:.2f} seconds")
 
             shapes = []
 
@@ -213,9 +251,7 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
                 shapes.append(collection_title)
                 current_top += collection_title_height + pixels_to_points(20)
             else:
-                print("Error: Failed to create collection title")
-
-            
+                logger.error("Error: Failed to create collection title")
             
             # Add title with dynamic sizing
             title_height = pixels_to_points(240)  # Increased height for title
@@ -234,7 +270,7 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
                 shapes.append(title_box)
                 current_top += title_height + pixels_to_points(20)
             else:
-                print("Error: Failed to create title box")
+                logger.error("Error: Failed to create title box")
                 
             # Add subtitle
             subtitle_height = pixels_to_points(80)  # Increased height for subtitle
@@ -254,7 +290,7 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
                     40
                 )  # Increased spacing after subtitle
             else:
-                print("Error: Failed to create subtitle box")
+                logger.error("Error: Failed to create subtitle box")
 
             # Add timestamps
             timestamp_height = pixels_to_points(30)
@@ -275,37 +311,30 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
                         layout_settings["timestamps"].get("spacing", 10)
                     )
                 else:
-                    print(f"Error: Failed to create timestamp box {i+1}")
+                    logger.error(f"Error: Failed to create timestamp box {i+1}")
 
             # Apply animations
-            for shape in shapes:
-                try:
-                    shape.AnimationSettings.EntryEffect = ppEffectFade
-                    shape.AnimationSettings.TextLevelEffect = 1  # Animate as one object
-                    shape.AnimationSettings.Animate = True
-                    print(f"Applied animation to {shape.Name}")
-                except Exception as e:
-                    print(f"Error applying animation to shape: {str(e)}")
+            apply_animations(slide, shapes, layout_settings.get('animations', {}))
 
             start_time = time.time()
             presentation.SaveAs(os.path.abspath(output_path))
-            print(f"Presentation saved in {time.time() - start_time:.2f} seconds")
+            logger.info(f"Presentation saved in {time.time() - start_time:.2f} seconds")
 
         except Exception as e:
-            print(f"An error occurred during presentation creation: {str(e)}")
-            print(traceback.format_exc())
+            logger.error(f"An error occurred during presentation creation: {str(e)}")
+            logger.error(traceback.format_exc())
         finally:
             if presentation:
                 try:
                     presentation.Close()
                 except Exception as close_error:
-                    print(f"Error closing presentation: {str(close_error)}")
+                    logger.error(f"Error closing presentation: {str(close_error)}")
             if powerpoint:
                 try:
                     powerpoint.Quit()
                 except Exception as quit_error:
-                    print(f"Error quitting PowerPoint: {str(quit_error)}")
-            print("PowerPoint closed")
+                    logger.error(f"Error quitting PowerPoint: {str(quit_error)}")
+            logger.info("PowerPoint closed")
 
             # Force COM objects to be released
             del presentation
@@ -316,13 +345,12 @@ def create_presentation(video_info_path, layout_settings_path, output_path):
             force_terminate_powerpoint()
 
     except Exception as outer_error:
-        print(f"An outer error occurred: {str(outer_error)}")
-        print(traceback.format_exc())
-
+        logger.error(f"An outer error occurred: {str(outer_error)}")
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     video_info_path = "video_info.json"
     layout_settings_path = "layout_settings.json"
     output_path = "intro_test.pptx"
     create_presentation(video_info_path, layout_settings_path, output_path)
-    print("Script completed.")
+    logger.info("Script completed.")
