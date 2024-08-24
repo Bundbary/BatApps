@@ -1,5 +1,4 @@
 import win32com.client
-from win32com.client import constants as ppConstants
 import json
 import os
 import time
@@ -142,45 +141,54 @@ def add_textbox_with_dynamic_font(slide, text, left, top, width, height, setting
         logger.error(traceback.format_exc())
         return None 
 
-
-import win32com.client
-
 def apply_animations(slide, shapes, animation_settings):
     try:
         sequence = slide.TimeLine.MainSequence
         
-        effect_type = 10  # Fade-in effect
-        delay = animation_settings.get('delay', 0.5)
-
         # Constants for animation triggers
         ppEffectOnClick = 1
         ppEffectWithPrevious = 2
         ppEffectAfterPrevious = 3
 
+        default_settings = animation_settings.get('default', {})
+        default_effect = default_settings.get('effect', 10)  # Fade-in effect
+        default_delay = default_settings.get('delay', 0.5)
+        default_duration = default_settings.get('duration', 0.5)
+
+        total_animation_time = 0
+
         for i, shape in enumerate(shapes):
-            # Add fade-in effect to each shape
+            # Determine which animation settings to use
+            if shape.Name.startswith('Timestamp'):
+                specific_settings = animation_settings.get('timestamps', default_settings)
+            else:
+                specific_settings = default_settings
+
+            effect_type = specific_settings.get('effect', default_effect)
+            delay = specific_settings.get('delay', default_delay)
+            duration = specific_settings.get('duration', default_duration)
+
+            # Add effect to the shape
             effect = sequence.AddEffect(shape, effect_type, trigger=ppEffectAfterPrevious)
-            effect.Timing.Duration = 0.5  # Duration of fade-in effect
+            effect.Timing.Duration = duration
             
             # Set delay between animations
             if i > 0:
                 effect.Timing.TriggerDelayTime = delay
 
-        # Calculate total animation time
-        total_animation_time = len(shapes) * (delay + 0.5)
+            total_animation_time += delay + duration
 
         # Set slide transition to advance automatically
         slide.SlideShowTransition.AdvanceOnTime = True
         slide.SlideShowTransition.AdvanceTime = total_animation_time + 1  # Add 1 second after all animations
         slide.SlideShowTransition.Duration = 1  # Duration of the transition effect
 
-        logger.info(f"Applied automatic fade-in animations to {len(shapes)} shapes")
+        logger.info(f"Applied automatic animations to {len(shapes)} shapes")
         logger.info(f"Set slide to advance automatically after {total_animation_time + 1} seconds")
 
     except Exception as e:
         logger.error(f"Error applying animations: {str(e)}")
         logger.error(traceback.format_exc())
-        
 
 def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
