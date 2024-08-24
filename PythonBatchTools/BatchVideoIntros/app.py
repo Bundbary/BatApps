@@ -154,6 +154,7 @@ def apply_animations(slide, shapes, animation_settings):
         default_effect = default_settings.get('effect', 10)  # Fade-in effect
         default_delay = default_settings.get('delay', 0.5)
         default_duration = default_settings.get('duration', 0.5)
+        text_display_duration = animation_settings.get('text_display_duration', 5)  # New setting
 
         total_animation_time = 0
 
@@ -178,18 +179,23 @@ def apply_animations(slide, shapes, animation_settings):
 
             total_animation_time += delay + duration
 
+        # Calculate total slide duration
+        total_slide_duration = total_animation_time + text_display_duration
+
         # Set slide transition to advance automatically
         slide.SlideShowTransition.AdvanceOnTime = True
-        slide.SlideShowTransition.AdvanceTime = total_animation_time + 1  # Add 1 second after all animations
+        slide.SlideShowTransition.AdvanceTime = total_slide_duration
         slide.SlideShowTransition.Duration = 1  # Duration of the transition effect
 
         logger.info(f"Applied automatic animations to {len(shapes)} shapes")
-        logger.info(f"Set slide to advance automatically after {total_animation_time + 1} seconds")
+        logger.info(f"Total animation time: {total_animation_time:.2f} seconds")
+        logger.info(f"Text display duration: {text_display_duration:.2f} seconds")
+        logger.info(f"Set slide to advance automatically after {total_slide_duration:.2f} seconds")
 
     except Exception as e:
         logger.error(f"Error applying animations: {str(e)}")
         logger.error(traceback.format_exc())
-
+        
 def create_presentation(video_info_path, layout_settings_path, output_path):
     try:
         with open(video_info_path, "r") as file:
