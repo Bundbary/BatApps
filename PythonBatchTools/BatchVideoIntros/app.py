@@ -287,6 +287,7 @@ def build_timestamp_with_dots(slide, text, time_str, max_width, font_name, font_
 
     return formatted_text
 
+
 def create_presentation(video_info_path, layout_settings_path, output_dir):
     try:
         with open(video_info_path, "r") as file:
@@ -413,6 +414,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             else:
                 logger.error("Error: Failed to create subtitle box")
 
+
             # Add timestamps
             logger.info(f"Starting to add {len(video_info['timestamps'])} timestamps")
             timestamp_height = pixels_to_points(30)
@@ -450,6 +452,9 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                     logger.error(f"Error: Failed to create timestamp box {i+1}")
 
             logger.info("Finished adding timestamps")
+
+
+
 
             # Apply animations
             logger.info("Applying animations")
@@ -584,7 +589,7 @@ if __name__ == "__main__":
 
     # Remove quotes if the user included them
     input_folder = input_folder.strip("\"'")
-
+    # c:\Users\bpenn\ExpectancyLearning\BatApps\PythonBatchTools\BatchVideoIntros\json_files_to_process\
     if not os.path.exists(input_folder):
         print(f"Error: The folder '{input_folder}' does not exist.")
         logger.error(f"Input folder does not exist: {input_folder}")
