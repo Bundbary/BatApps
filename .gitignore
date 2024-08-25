@@ -4,3 +4,4 @@ PythonBatchTools/Batch_Video_Transcription/config.ini
 PythonBatchTools/VideoTextOverlay/venv
 PythonBatchTools/VideoTextOverlay/video_temp
 PythonBatchTools/BatchVideoIntros/myenv
+PythonBatchTools/BatchVideoIntros/json_files_to_process
