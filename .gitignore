@@ -5,3 +5,6 @@ PythonBatchTools/VideoTextOverlay/venv
 PythonBatchTools/VideoTextOverlay/video_temp
 PythonBatchTools/BatchVideoIntros/myenv
 PythonBatchTools/BatchVideoIntros/json_files_to_process
+video_input_temp
+TempFilesForCodecChange
+TempFilesForPrependIntroVideo
