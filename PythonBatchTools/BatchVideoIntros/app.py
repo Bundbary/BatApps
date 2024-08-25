@@ -287,7 +287,7 @@ def build_timestamp_with_dots(slide, text, time_str, max_width, font_name, font_
 
     return formatted_text
 
-def create_presentation(video_info_path, layout_settings_path, output_pptx_path, output_video_path):
+def create_presentation(video_info_path, layout_settings_path, output_dir):
     try:
         with open(video_info_path, "r") as file:
             video_info = json.load(file)
@@ -295,7 +295,12 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
         with open(layout_settings_path, "r") as file:
             layout_settings = json.load(file)
 
-        logger.info("Starting presentation creation")
+        # Generate output file names based on input JSON file name
+        base_name = os.path.splitext(os.path.basename(video_info_path))[0]
+        output_pptx_path = os.path.join(output_dir, f"{base_name}.pptx")
+        output_video_path = os.path.join(output_dir, f"{base_name}.mp4")
+
+        logger.info(f"Starting presentation creation for {base_name}")
 
         powerpoint = None
         presentation = None
@@ -310,8 +315,8 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
             presentation = powerpoint.Presentations.Add()
 
             # Set slide size
-            slide_width = pixels_to_points(video_info["video"]["width"])
-            slide_height = pixels_to_points(video_info["video"]["height"])
+            slide_width = pixels_to_points(layout_settings["video"]["width"])
+            slide_height = pixels_to_points(layout_settings["video"]["height"])
             presentation.PageSetup.SlideWidth = slide_width
             presentation.PageSetup.SlideHeight = slide_height
 
@@ -322,7 +327,7 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
 
             # Layout settings
             margin = pixels_to_points(layout_settings["slide"]["margin"])
-            img_width = (slide_width * video_info["layout"]["image_width_percentage"] / 100)
+            img_width = (slide_width * layout_settings["layout"]["image_width_percentage"] / 100)
             content_width = slide_width - img_width - margin * 2
 
             logger.info("Adding main content elements")
@@ -348,7 +353,7 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
             collection_title_height = pixels_to_points(40)
             collection_title = add_textbox_with_dynamic_font(
                 slide,
-                "VIDEO COLLECTION TITLE",
+                video_info["collection_title"],
                 margin,
                 current_top,
                 content_width,
@@ -373,7 +378,7 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
 
             title_box = add_textbox_with_dynamic_font(
                 slide,
-                video_info['intro']['title'],
+                video_info['title'],
                 margin,
                 current_top,
                 content_width,
@@ -393,7 +398,7 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
             subtitle_height = pixels_to_points(80)  # Increased height for subtitle
             subtitle_box = add_textbox_with_dynamic_font(
                 slide,
-                video_info["intro"]["subtitle"],
+                video_info["subtitle"],
                 margin,
                 current_top,
                 content_width,
@@ -409,10 +414,10 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
                 logger.error("Error: Failed to create subtitle box")
 
             # Add timestamps
-            logger.info(f"Starting to add {len(video_info['intro']['timestamps'])} timestamps")
+            logger.info(f"Starting to add {len(video_info['timestamps'])} timestamps")
             timestamp_height = pixels_to_points(30)
 
-            for i, timestamp in enumerate(video_info["intro"]["timestamps"]):
+            for i, timestamp in enumerate(video_info["timestamps"]):
                 logger.info(f"Processing timestamp {i+1}: {timestamp['text']}")
                 formatted_text = build_timestamp_with_dots(
                     slide,
@@ -492,11 +497,40 @@ def create_presentation(video_info_path, layout_settings_path, output_pptx_path,
         logger.error(f"An outer error occurred: {str(outer_error)}")
         logger.error(traceback.format_exc())
 
-    logger.info("Presentation creation and video export process completed")
+    logger.info(f"Presentation creation and video export process completed for {base_name}")
 
+def process_folder(input_folder):
+    logger.info(f"Starting batch processing for folder: {input_folder}")
 
+    # Ensure the input folder exists
+    if not os.path.exists(input_folder):
+        logger.error(f"Input folder does not exist: {input_folder}")
+        return
 
-import os
+    # Get the path to layout_settings.json in the same directory as the script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    layout_settings_path = os.path.join(script_dir, 'layout_settings.json')
+
+    if not os.path.exists(layout_settings_path):
+        logger.error(f"layout_settings.json not found in the script directory: {script_dir}")
+        return
+
+    # Get all JSON files in the input folder
+    json_files = [f for f in os.listdir(input_folder) if f.endswith('.json')]
+
+    if not json_files:
+        logger.warning(f"No JSON files found in the input folder: {input_folder}")
+        return
+
+    for json_file in json_files:
+        video_info_path = os.path.join(input_folder, json_file)
+        output_dir = input_folder  # Use the same folder for output
+
+        logger.info(f"Processing file: {json_file}")
+        create_presentation(video_info_path, layout_settings_path, output_dir)
+
+    logger.info("Batch processing completed")
+
 
 def export_to_video(presentation, output_path):
     try:
@@ -539,9 +573,23 @@ def export_to_video(presentation, output_path):
     
 
 if __name__ == "__main__":
-    video_info_path = "video_info.json"
-    layout_settings_path = "layout_settings.json"
-    output_pptx_path = "intro_test.pptx"
-    output_video_path = "intro_test.mp4"  # This will be in the same folder as the script
-    create_presentation(video_info_path, layout_settings_path, output_pptx_path, output_video_path)
-    logger.info("Script completed.")
+    # Set up logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logger = logging.getLogger(__name__)
+
+    print("Welcome to the Batch Video Intro Creator!")
+    print("Please enter the path to the folder containing your JSON files:")
+    
+    input_folder = input().strip()
+
+    # Remove quotes if the user included them
+    input_folder = input_folder.strip("\"'")
+
+    if not os.path.exists(input_folder):
+        print(f"Error: The folder '{input_folder}' does not exist.")
+        logger.error(f"Input folder does not exist: {input_folder}")
+        sys.exit(1)
+
+    process_folder(input_folder)
+    
+    print("Batch processing completed. Check the log for details.")
