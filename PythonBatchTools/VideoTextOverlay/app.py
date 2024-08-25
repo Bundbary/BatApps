@@ -18,13 +18,14 @@ change_settings({"IMAGEMAGICK_BINARY": imagemagick_binary})
 def color_to_rgb(color_string):
     """Convert color string to RGB tuple."""
     if isinstance(color_string, tuple):
-        return color_string
+        return color_string[:3]  # Return only RGB values
     if color_string.startswith('#'):
         # Hex color
         return tuple(int(color_string[i:i+2], 16) for i in (1, 3, 5))
     elif color_string.startswith('rgb'):
-        # RGB color
-        return tuple(map(int, re.findall(r'\d+', color_string)))
+        # RGB or RGBA color
+        values = list(map(int, re.findall(r'\d+', color_string)))
+        return tuple(values[:3])  # Return only RGB values
     else:
         # Named color (limited set for simplicity)
         colors = {
@@ -36,7 +37,7 @@ def color_to_rgb(color_string):
             # Add more colors as needed
         }
         return colors.get(color_string.lower(), (0, 0, 0))  # Default to black if color not found
-
+    
 @dataclass
 class TextOverlay:
     text: str
@@ -80,73 +81,83 @@ class VideoTextOverlayProcessor:
             self.text_overlays = [TextOverlay(**item) for item in data.get("text_data", [])]
 
     def apply_text_overlay(self, overlay: TextOverlay, video_size: tuple) -> VideoClip:
-        def create_text_clip(t):
-            current_fontsize = overlay.fontsize
-            if overlay.fontsize_function:
-                fontsize_func = eval(overlay.fontsize_function[0])
-                current_fontsize = int(fontsize_func(t))
+        try:
+            def create_text_clip(t):
+                current_fontsize = overlay.fontsize
+                if overlay.fontsize_function:
+                    fontsize_func = eval(overlay.fontsize_function[0])
+                    current_fontsize = int(fontsize_func(t))
 
-            current_color = overlay.color
-            if isinstance(overlay.color, list):
-                color_func = eval(overlay.color[0])
-                current_color = color_func(t)
+                current_color = overlay.color
+                if isinstance(overlay.color, list):
+                    color_func = eval(overlay.color[0])
+                    current_color = color_func(t)
 
-            # Ensure color is in the correct format
-            if isinstance(current_color, tuple):
-                current_color = 'rgb' + str(current_color)
-            elif not isinstance(current_color, str):
-                current_color = str(current_color)
+                # Ensure color is in the correct format
+                if isinstance(current_color, tuple):
+                    current_color = 'rgb' + str(current_color)
+                elif not isinstance(current_color, str):
+                    current_color = str(current_color)
 
-            text_clip = TextClip(str(overlay.text), fontsize=current_fontsize, color=current_color, font='Arial', method='label')
+                text_clip = TextClip(str(overlay.text), fontsize=current_fontsize, color=current_color, font='Arial', method='label')
+                
+                if overlay.animate_letters:
+                    letters = findObjects(text_clip)
+                    letter_clips = [letter.set_position(lambda t: (letter.screenpos[0], letter.screenpos[1] + np.sin(t*5 + i*0.5)*10)) 
+                                    for i, letter in enumerate(letters)]
+                    text_clip = CompositeVideoClip(letter_clips, size=text_clip.size)
+
+                if overlay.background_color:
+                    bg_color = color_to_rgb(overlay.background_color)
+                    bg_color_str = 'rgb' + str(bg_color)
+                    text_clip = text_clip.on_color(
+                        size=(text_clip.w + 10, text_clip.h + 10),
+                        color=bg_color_str,
+                        pos=(5, 'center'),
+                        col_opacity=float(overlay.background_opacity or 1)
+                    )
+
+                if overlay.perspective:
+                    text_clip = text_clip.image_transform(
+                        lambda pic: self.apply_perspective(pic, *overlay.perspective))
+
+                return text_clip
             
-            if overlay.animate_letters:
-                letters = findObjects(text_clip)
-                letter_clips = [letter.set_position(lambda t: (letter.screenpos[0], letter.screenpos[1] + np.sin(t*5 + i*0.5)*10)) 
-                                for i, letter in enumerate(letters)]
-                text_clip = CompositeVideoClip(letter_clips, size=text_clip.size)
+            def make_frame(t):
+                return create_text_clip(t).get_frame(t)
 
-            if overlay.background_color:
-                bg_color = color_to_rgb(overlay.background_color)
-                bg_color_str = 'rgb' + str(bg_color)
-                text_clip = text_clip.on_color(
-                    size=(text_clip.w + 10, text_clip.h + 10),
-                    color=bg_color_str,
-                    pos=(5, 'center'),
-                    col_opacity=overlay.background_opacity or 1
-                )
+            text_clip = VideoClip(make_frame=make_frame, duration=overlay.duration)
+            
+            if isinstance(overlay.position[0], str):
+                position_func = eval(overlay.position[0])
+                text_clip = text_clip.set_position(position_func)
+            elif overlay.scroll_speed:
+                text_clip = text_clip.set_position(lambda t: (text_clip.w/2, video_size[1] + t * overlay.scroll_speed))
+            else:
+                text_clip = text_clip.set_position(tuple(overlay.position))
 
-            if overlay.perspective:
-                text_clip = text_clip.image_transform(
-                    lambda pic: self.apply_perspective(pic, *overlay.perspective))
+            text_clip = text_clip.set_start(overlay.start_time)
+
+            if overlay.effect == "fade_in_out" and overlay.effect_duration:
+                fade_in_clip = text_clip.fx(fadein, duration=overlay.effect_duration)
+                fade_out_clip = text_clip.fx(fadeout, duration=overlay.effect_duration)
+                text_clip = CompositeVideoClip([
+                    fade_in_clip,
+                    fade_out_clip.set_start(text_clip.duration - overlay.effect_duration)
+                ]).set_duration(text_clip.duration)
+            elif overlay.effect == "fade_in" and overlay.effect_duration:
+                text_clip = text_clip.fx(fadein, duration=overlay.effect_duration)
+            elif overlay.effect == "fade_out" and overlay.effect_duration:
+                text_clip = text_clip.fx(fadeout, duration=overlay.effect_duration)
+
+            if overlay.rotate:
+                rotate_func = eval(overlay.rotate[0])
+                text_clip = text_clip.rotate(lambda t: rotate_func(t))
 
             return text_clip
-        
-        def make_frame(t):
-            return create_text_clip(t).get_frame(t)
-
-        text_clip = VideoClip(make_frame=make_frame, duration=overlay.duration)
-        
-        if isinstance(overlay.position[0], str):
-            position_func = eval(overlay.position[0])
-            text_clip = text_clip.set_position(position_func)
-        elif overlay.scroll_speed:
-            text_clip = text_clip.set_position(lambda t: (text_clip.w/2, video_size[1] + t * overlay.scroll_speed))
-        else:
-            text_clip = text_clip.set_position(tuple(overlay.position))
-
-        text_clip = text_clip.set_start(overlay.start_time)
-
-        if overlay.effect == "fade_in" and overlay.effect_duration:
-            text_clip = text_clip.fx(fadein, duration=overlay.effect_duration)
-        elif overlay.effect == "fade_out" and overlay.effect_duration:
-            text_clip = text_clip.fx(fadeout, duration=overlay.effect_duration)
-
-        if overlay.rotate:
-            rotate_func = eval(overlay.rotate[0])
-            text_clip = text_clip.rotate(lambda t: rotate_func(t))
-
-        return text_clip
-
+        except Exception as e:
+            print(f"Error in apply_text_overlay: {str(e)}")
+            return None
     @staticmethod
     def apply_perspective(pic, cx, cy):
         Y, X = pic.shape[:2]
