@@ -415,11 +415,12 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 logger.error("Error: Failed to create subtitle box")
 
 
+
             # Add timestamps
             logger.info(f"Starting to add {len(video_info['timestamps'])} timestamps")
             timestamp_height = pixels_to_points(30)
 
-            for i, timestamp in enumerate(video_info["timestamps"]):
+            for i, timestamp in enumerate(video_info['timestamps']):
                 logger.info(f"Processing timestamp {i+1}: {timestamp['text']}")
                 formatted_text = build_timestamp_with_dots(
                     slide,
@@ -444,15 +445,15 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 if ts_box is not None:
                     ts_box.Name = f"Timestamp{i+1}"
                     shapes.append(ts_box)
+                    # Reduce the spacing by about one-third
                     current_top += timestamp_height + pixels_to_points(
-                        layout_settings["timestamps"].get("spacing", 10)
+                        layout_settings["timestamps"].get("spacing", 10) * 0.67
                     )
                     logger.info(f"Added timestamp {i+1} successfully")
                 else:
                     logger.error(f"Error: Failed to create timestamp box {i+1}")
 
             logger.info("Finished adding timestamps")
-
 
 
 
