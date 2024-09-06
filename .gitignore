@@ -9,3 +9,11 @@ video_input_temp
 TempFilesForCodecChange
 TempFilesForPrependIntroVideo
 _delete_after_a_respectable_amount_of_time
+output
+PythonBatchTools/Batch_Video_Transcription/temp
+PythonBatchTools/Batch_Video_Transcription/_delete
+PythonBatchTools/PullJSONFromHTMLTable/myenv
+PythonBatchTools/TextToAudio/myenv
+PythonBatchTools/TextToAudio/text_to_translate
+PythonBatchTools/TextToAudio/voice_test
+temp_mp4s

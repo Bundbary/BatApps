@@ -18,13 +18,13 @@
     "collection_title": {
         "font_name": "Energy Display",
         "font_size": 30,
-        "color": 16711827,
+        "color": 9441280,
         "space_within": 1.2
     },
     "title": {
         "font_name": "Energy Display",
         "font_size": 100,
-        "color": 16711827,
+        "color": 9441280,
         "space_within": 0.8,
         "dynamic_sizing": true,
         "min_font_size": 80,

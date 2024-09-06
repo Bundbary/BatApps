@@ -1,0 +1,33 @@
+{
+    "voicemaker": {
+        "url": "https://developer.voicemaker.in/voice/api",
+        "headers": {
+            "Authorization": "Bearer YOUR-API-KEY",
+            "Content-Type": "application/json"
+        },
+        "payload": {
+            "Engine": "neural",
+            "VoiceId": "ai3-Jony",
+            "LanguageCode": "en-US",
+            "OutputFormat": "mp3",
+            "SampleRate": "48000",
+            "Effect": "default",
+            "MasterVolume": "0",
+            "MasterSpeed": "0",
+            "MasterPitch": "0"
+        }
+    },
+    "other_api": {
+        "url": "https://api.other-tts-service.com/synthesize",
+        "headers": {
+            "Authorization": "Bearer YOUR-OTHER-API-KEY",
+            "Content-Type": "application/json"
+        },
+        "payload": {
+            "voice": "en-US-Standard-A",
+            "audio_config": {
+                "audio_encoding": "MP3"
+            }
+        }
+    }
+}
