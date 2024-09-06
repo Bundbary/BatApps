@@ -396,7 +396,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             # Add subtitle
             logger.info("Adding subtitle")
-            subtitle_height = pixels_to_points(80)  # Increased height for subtitle
+            subtitle_height = pixels_to_points(80)  # Initial height, may be adjusted
             subtitle_box = add_textbox_with_dynamic_font(
                 slide,
                 video_info["subtitle"],
@@ -409,16 +409,29 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             if subtitle_box is not None:
                 subtitle_box.Name = "SubtitleBox"
                 shapes.append(subtitle_box)
-                current_top += subtitle_box.Height + pixels_to_points(40)  # Increased spacing after subtitle
-                logger.info("Subtitle added successfully")
+                
+                # Force the text frame to auto-fit the text
+                subtitle_box.TextFrame.AutoSize = 1  # ppAutoSizeShapeToFitText
+                
+                # Get the actual height of the text content
+                actual_text_height = subtitle_box.TextFrame.TextRange.BoundHeight
+                
+                # Adjust the shape height to match the text height
+                subtitle_box.Height = actual_text_height
+                
+                # Calculate the bottom of the subtitle box
+                subtitle_bottom = subtitle_box.Top + actual_text_height
+                logger.info(f"Subtitle added successfully. Bottom position: {subtitle_bottom}")
             else:
                 logger.error("Error: Failed to create subtitle box")
+                subtitle_bottom = current_top + subtitle_height  # Fallback if subtitle creation fails
 
-
-
+            # Add some padding below the subtitle
+            timestamp_start = subtitle_bottom + pixels_to_points(20)  # 20 points of padding
             # Add timestamps
             logger.info(f"Starting to add {len(video_info['timestamps'])} timestamps")
             timestamp_height = pixels_to_points(30)
+            timestamp_spacing = pixels_to_points(layout_settings["timestamps"].get("spacing", 10))
 
             for i, timestamp in enumerate(video_info['timestamps']):
                 logger.info(f"Processing timestamp {i+1}: {timestamp['text']}")
@@ -435,7 +448,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                     slide,
                     formatted_text,
                     margin,
-                    current_top,
+                    timestamp_start + (i * (timestamp_height + timestamp_spacing)),
                     content_width,
                     timestamp_height,
                     layout_settings["timestamps"],
@@ -445,16 +458,11 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 if ts_box is not None:
                     ts_box.Name = f"Timestamp{i+1}"
                     shapes.append(ts_box)
-                    # Reduce the spacing by about one-third
-                    current_top += timestamp_height + pixels_to_points(
-                        layout_settings["timestamps"].get("spacing", 10) * 0.67
-                    )
-                    logger.info(f"Added timestamp {i+1} successfully")
+                    logger.info(f"Added timestamp {i+1} successfully at position {ts_box.Top}")
                 else:
                     logger.error(f"Error: Failed to create timestamp box {i+1}")
 
             logger.info("Finished adding timestamps")
-
 
 
             # Apply animations
