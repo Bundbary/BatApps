@@ -333,19 +333,55 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             logger.info("Adding main content elements")
 
-            # Add image placeholder
-            img_placeholder = slide.Shapes.AddShape(
-                1,  # msoShapeRectangle
-                slide_width - img_width,
-                0,
-                img_width,
-                slide_height,
-            )
-            img_placeholder.Fill.ForeColor.RGB = 13421772  # Light gray
-            img_placeholder.Line.Visible = False  # Remove border
-            img_placeholder.Name = "ImagePlaceholder"
-            shapes.append(img_placeholder)
-            logger.info("Added image placeholder")
+            # Add the actual image
+            image_path = os.path.join(output_dir, 'intro_image.jpg')
+            if os.path.exists(image_path):
+                try:
+                    left = slide_width - img_width
+                    top = 0
+                    height = slide_height
+                    image_shape = slide.Shapes.AddPicture(
+                        image_path,
+                        LinkToFile=False,
+                        SaveWithDocument=True,
+                        Left=left,
+                        Top=top,
+                        Width=img_width,
+                        Height=height
+                    )
+                    image_shape.Name = "IntroImage"
+                    shapes.append(image_shape)
+                    logger.info("Added intro image successfully")
+                except Exception as e:
+                    logger.error(f"Error adding intro image: {str(e)}")
+                    # If there's an error adding the image, we'll create a placeholder shape
+                    img_placeholder = slide.Shapes.AddShape(
+                        1,  # msoShapeRectangle
+                        left,
+                        top,
+                        img_width,
+                        height,
+                    )
+                    img_placeholder.Fill.ForeColor.RGB = 13421772  # Light gray
+                    img_placeholder.Line.Visible = False  # Remove border
+                    img_placeholder.Name = "ImagePlaceholder"
+                    shapes.append(img_placeholder)
+                    logger.info("Added image placeholder due to error with actual image")
+            else:
+                logger.warning(f"Image file not found: {image_path}")
+                # Create a placeholder shape if the image file is not found
+                img_placeholder = slide.Shapes.AddShape(
+                    1,  # msoShapeRectangle
+                    slide_width - img_width,
+                    0,
+                    img_width,
+                    slide_height,
+                )
+                img_placeholder.Fill.ForeColor.RGB = 13421772  # Light gray
+                img_placeholder.Line.Visible = False  # Remove border
+                img_placeholder.Name = "ImagePlaceholder"
+                shapes.append(img_placeholder)
+                logger.info("Added image placeholder due to missing image file")
 
             current_top = margin
 
