@@ -13,6 +13,11 @@
             "delay": 0.2,
             "duration": 0.3
         },
+        "bullets": {
+            "effect": 10,
+            "delay": 0.3,
+            "duration": 0.4
+        },
         "text_display_duration": 5
     },
     "collection_title": {
@@ -35,6 +40,14 @@
         "font_size": 23,
         "color": 0,
         "space_within": 1
+    },
+    "bullets": {
+        "font_name": "Energy Regular",
+        "font_size": 20,
+        "color": 0,
+        "space_within": 1.2,
+        "indent": 20,
+        "spacing": 5
     },
     "timestamps": {
         "font_name": "Energy Bold",

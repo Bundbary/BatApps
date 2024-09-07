@@ -212,12 +212,13 @@ def apply_animations(slide, shapes, animation_settings):
 
         total_animation_time = 0
 
+        
         for i, shape in enumerate(shapes):
             # Determine which animation settings to use
             if shape.Name.startswith("Timestamp"):
-                specific_settings = animation_settings.get(
-                    "timestamps", default_settings
-                )
+                specific_settings = animation_settings.get("timestamps", default_settings)
+            elif shape.Name.startswith("BulletPoint"):
+                specific_settings = animation_settings.get("bullets", default_settings)
             else:
                 specific_settings = default_settings
 
@@ -466,12 +467,63 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 logger.error("Error: Failed to create subtitle box")
                 subtitle_bottom = current_top + subtitle_height  # Fallback if subtitle creation fails
 
+
+            # Add bullet points
+            if "bullets" in video_info:
+                logger.info("Adding bullet points")
+                bullet_settings = layout_settings["bullets"]
+                default_spacing = 10  # You can adjust this default value
+                bullet_spacing = pixels_to_points(bullet_settings.get("spacing", default_spacing))
+                
+                current_top = subtitle_bottom + bullet_spacing  # Start bullets below subtitle
+
+                for i, bullet_text in enumerate(video_info["bullets"]):
+                    bullet_box = add_bullet_point(
+                        slide,
+                        bullet_text,
+                        margin,
+                        current_top,
+                        content_width,
+                        pixels_to_points(30),  # Initial height, will be adjusted
+                        bullet_settings
+                    )
+                    if bullet_box is not None:
+                        bullet_box.Name = f"BulletPoint{i+1}"
+                        shapes.append(bullet_box)
+                        
+                        # Force the text frame to auto-fit the text
+                        bullet_box.TextFrame.AutoSize = 1  # ppAutoSizeShapeToFitText
+                        
+                        # Get the actual height of the bullet point
+                        actual_bullet_height = bullet_box.Height
+                        
+                        logger.info(f"Added bullet point {i+1} successfully at position {current_top}")
+                        logger.info(f"Bullet point {i+1} actual height: {actual_bullet_height}")
+                        
+                        # Update current_top for the next bullet
+                        current_top += actual_bullet_height + bullet_spacing
+                    else:
+                        logger.error(f"Error: Failed to create bullet point {i+1}")
+
+                # Add extra space after the last bullet
+                current_top += bullet_spacing
+
+            logger.info(f"Bullet spacing used: {bullet_spacing}")
+
+
+                
+
             # Add some padding below the subtitle
             timestamp_start = subtitle_bottom + pixels_to_points(20)  # 20 points of padding
+
+
             # Add timestamps
             logger.info(f"Starting to add {len(video_info['timestamps'])} timestamps")
             timestamp_height = pixels_to_points(30)
             timestamp_spacing = pixels_to_points(layout_settings["timestamps"].get("spacing", 10))
+
+            # Add some extra spacing between bullets and timestamps
+            current_top += pixels_to_points(20)  # You can adjust this value as needed
 
             for i, timestamp in enumerate(video_info['timestamps']):
                 logger.info(f"Processing timestamp {i+1}: {timestamp['text']}")
@@ -488,7 +540,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                     slide,
                     formatted_text,
                     margin,
-                    timestamp_start + (i * (timestamp_height + timestamp_spacing)),
+                    current_top,
                     content_width,
                     timestamp_height,
                     layout_settings["timestamps"],
@@ -498,7 +550,8 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 if ts_box is not None:
                     ts_box.Name = f"Timestamp{i+1}"
                     shapes.append(ts_box)
-                    logger.info(f"Added timestamp {i+1} successfully at position {ts_box.Top}")
+                    logger.info(f"Added timestamp {i+1} successfully at position {current_top}")
+                    current_top += ts_box.Height + timestamp_spacing
                 else:
                     logger.error(f"Error: Failed to create timestamp box {i+1}")
 
@@ -624,6 +677,35 @@ def export_to_video(presentation, output_path):
         logger.error(traceback.format_exc())
         return False
     
+    
+def add_bullet_point(slide, text, left, top, width, height, settings):
+    try:
+        shape = slide.Shapes.AddTextbox(1, left, top, width, height)
+        text_frame = shape.TextFrame
+        text_range = text_frame.TextRange
+
+        # Set the text and enable bullet
+        text_range.Text = text
+        text_range.ParagraphFormat.Bullet.Visible = True
+
+        # Set bullet character (you can change this if needed)
+        text_range.ParagraphFormat.Bullet.Character = 8226  # Unicode for bullet (•)
+
+        # Set bullet size relative to text
+        text_range.ParagraphFormat.Bullet.RelativeSize = 1.0
+
+        # Set font properties
+        font = text_range.Font
+        font.Name = settings["font_name"]
+        font.Size = settings["font_size"]
+        font.Color.RGB = settings["color"]
+        return shape
+    except Exception as e:
+        logger.error(f"Error in add_bullet_point: {str(e)}")
+        logger.error(traceback.format_exc())
+        return None
+    
+
 
 if __name__ == "__main__":
     # Set up logging
@@ -646,3 +728,4 @@ if __name__ == "__main__":
     process_folder(input_folder)
     
     print("Batch processing completed. Check the log for details.")
+    
