@@ -604,7 +604,8 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
         logger.error(traceback.format_exc())
 
     logger.info(f"Presentation creation and video export process completed for {base_name}")
-    
+  
+  
 def process_folder(input_folder):
     logger.info(f"Starting batch processing for folder: {input_folder}")
 
@@ -621,19 +622,21 @@ def process_folder(input_folder):
         logger.error(f"layout_settings.json not found in the script directory: {script_dir}")
         return
 
-    # Get all JSON files in the input folder
-    json_files = [f for f in os.listdir(input_folder) if f.endswith('.json')]
+    for root, dirs, files in os.walk(input_folder):
+        # Remove '_backups' from dirs to skip it
+        if '_backups' in dirs:
+            dirs.remove('_backups')
 
-    if not json_files:
-        logger.warning(f"No JSON files found in the input folder: {input_folder}")
-        return
+        # Look for global_props.json in each subfolder
+        global_props_file = "global_props.json"
+        video_info_path = os.path.join(root, global_props_file)
 
-    for json_file in json_files:
-        video_info_path = os.path.join(input_folder, json_file)
-        output_dir = input_folder  # Use the same folder for output
-
-        logger.info(f"Processing file: {json_file}")
-        create_presentation(video_info_path, layout_settings_path, output_dir)
+        if os.path.exists(video_info_path):
+            output_dir = root  # Use the same folder for output
+            logger.info(f"Processing file: {video_info_path}")
+            create_presentation(video_info_path, layout_settings_path, output_dir)
+        else:
+            logger.info(f"Skipping folder {root}: global_props.json not found")
 
     logger.info("Batch processing completed")
 
