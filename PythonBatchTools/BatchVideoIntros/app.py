@@ -296,6 +296,9 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
         with open(layout_settings_path, "r") as file:
             layout_settings = json.load(file)
 
+        # Ensure output_dir is an absolute path
+        output_dir = os.path.abspath(output_dir)
+
         # Generate output file names based on input JSON file name
         base_name = os.path.splitext(os.path.basename(video_info_path))[0]
         output_pptx_path = os.path.join(output_dir, f"{base_name}.pptx")
@@ -335,6 +338,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             # Add the actual image
             image_path = os.path.join(output_dir, 'intro_image.jpg')
+            logger.info(f"Attempting to add image from: {image_path}")
             if os.path.exists(image_path):
                 try:
                     left = slide_width - img_width
@@ -351,7 +355,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                     )
                     image_shape.Name = "IntroImage"
                     shapes.append(image_shape)
-                    logger.info("Added intro image successfully")
+                    logger.info(f"Added intro image successfully: {image_path}")
                 except Exception as e:
                     logger.error(f"Error adding intro image: {str(e)}")
                     # If there's an error adding the image, we'll create a placeholder shape
@@ -500,7 +504,6 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             logger.info("Finished adding timestamps")
 
-
             # Apply animations
             logger.info("Applying animations")
             apply_animations(slide, shapes, layout_settings.get("animations", {}))
@@ -548,7 +551,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
         logger.error(traceback.format_exc())
 
     logger.info(f"Presentation creation and video export process completed for {base_name}")
-
+    
 def process_folder(input_folder):
     logger.info(f"Starting batch processing for folder: {input_folder}")
 
