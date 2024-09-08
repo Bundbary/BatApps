@@ -4,10 +4,17 @@ import subprocess
 from datetime import datetime, timezone
 from openai import OpenAI
 
-# Initialize the OpenAI client
+# Initialize the OpenAI client with an API key
+# Note: It's generally not recommended to hardcode API keys in scripts
 client = OpenAI(api_key="sk--g2hiAUedCQ72Qk3DiAxxvKxkOEltseJThkuGGWCnCT3BlbkFJEoOjLUoOD1CCWxNlRMxF3-81c4FruygP7WruHdBocA")
 
 def transcribe_audio(audio_path):
+    """
+    Transcribes an audio file using OpenAI's Whisper model.
+    
+    :param audio_path: Path to the audio file
+    :return: Transcribed text
+    """
     with open(audio_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
             model="whisper-1", file=audio_file
@@ -15,6 +22,12 @@ def transcribe_audio(audio_path):
     return transcript.text
 
 def get_video_duration(video_path):
+    """
+    Gets the duration of a video file using ffprobe.
+    
+    :param video_path: Path to the video file
+    :return: Duration in seconds, or None if an error occurs
+    """
     try:
         result = subprocess.run([
             'ffprobe',
@@ -29,6 +42,14 @@ def get_video_duration(video_path):
         return None
 
 def create_json_object(label, transcript, duration):
+    """
+    Creates a JSON object with the given information.
+    
+    :param label: Label for the JSON object (usually the filename)
+    :param transcript: Transcribed text
+    :param duration: Duration of the audio/video
+    :return: Dictionary representing the JSON object
+    """
     return {
         "label": label,
         "notes": [],
@@ -44,10 +65,20 @@ def create_json_object(label, transcript, duration):
     }
 
 def process_file(audio_path):
+    """
+    Processes a single audio file: transcribes it, gets its duration,
+    and saves the results as a text file and a JSON file.
+    
+    :param audio_path: Path to the audio file
+    """
+    # Extract the base name of the file (without extension)
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
+    
+    # Define paths for the transcript and JSON files
     transcript_path = os.path.join(os.path.dirname(audio_path), f"{base_name}_transcript.txt")
     json_path = os.path.join(os.path.dirname(audio_path), f"{base_name}.json")
 
+    # Skip if transcript already exists
     if os.path.exists(transcript_path):
         print(f"Skipping {os.path.basename(audio_path)} (transcript already exists)")
         return
@@ -75,6 +106,12 @@ def process_file(audio_path):
         print(f"Error processing {os.path.basename(audio_path)}: {str(e)}")
 
 def process_folder(folder_path):
+    """
+    Recursively processes all MP3 files in the given folder and its subfolders,
+    skipping any folder named '_backup'.
+    
+    :param folder_path: Path to the root folder to process
+    """
     for root, dirs, files in os.walk(folder_path):
         # Remove '_backup' from dirs to skip it
         if '_backup' in dirs:
@@ -86,6 +123,8 @@ def process_folder(folder_path):
                 process_file(audio_path)
 
 if __name__ == "__main__":
+    # Get the folder path from user input
     folder_path = input("Enter the path to the folder containing MP3 files: ")
     print(f"Processing folder: {folder_path}")
+    # Start processing the folder
     process_folder(folder_path)

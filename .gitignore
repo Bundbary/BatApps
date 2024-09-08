@@ -17,3 +17,4 @@ PythonBatchTools/TextToAudio/myenv
 PythonBatchTools/TextToAudio/text_to_translate
 PythonBatchTools/TextToAudio/voice_test
 temp_mp4s
+PythonBatchTools/Batch_transcript_to_voice/temp
