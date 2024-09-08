@@ -1,6 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
+
 REM Check if jq is installed
 where jq >nul 2>&1
 if %errorlevel% neq 0 (
