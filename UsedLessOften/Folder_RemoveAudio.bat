@@ -14,25 +14,27 @@ if not exist "%input_folder%" (
     goto :eof
 )
 
-REM Create a folder for processed videos
-set "output_folder=%input_folder%\noaudio_videos"
-if not exist "%output_folder%" mkdir "%output_folder%"
+REM Create a folder for backups
+set "backup_folder=%input_folder%\_backups"
+if not exist "%backup_folder%" mkdir "%backup_folder%"
 
 REM Process each video file in the folder
 for %%F in ("%input_folder%\*.mp4" "%input_folder%\*.avi" "%input_folder%\*.mov") do (
     set "input_file=%%F"
-    set "video_name=%%~nF"
+    set "video_name=%%~nxF"
     
     echo Processing: !video_name!
     
-    set "output_file=%output_folder%\noaudio_!video_name!.mp4"
+    REM Move original file to backup folder
+    move "!input_file!" "%backup_folder%\!video_name!"
     
-    ffmpeg -i "!input_file!" -c:v copy -an "!output_file!"
+    REM Create no-audio version in place of the original
+    ffmpeg -i "%backup_folder%\!video_name!" -c:v copy -an "!input_file!"
     
     echo Finished processing !video_name!.
     echo.
 )
 
 REM Output completion message
-echo Audio removed from all videos. Processed videos are saved in: %output_folder%
+echo Audio removed from all videos. Original files are backed up in: %backup_folder%
 pause
