@@ -17,6 +17,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+
 REM Check if the JSON file exists
 if not exist "%input_file%" (
     echo Error: The specified JSON file does not exist.

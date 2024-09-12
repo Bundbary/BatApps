@@ -9,7 +9,6 @@ if %errorlevel% neq 0 (
     goto :end
 )
 
-
 REM Confirmation prompt
 set /p "confirm=Press Y if you ran this file on purpose. (Y/N): "
 if /i "%confirm%" neq "Y" goto :end
@@ -25,17 +24,34 @@ if not exist "%input_folder%" (
 
 echo Processing files in: %input_folder%
 
-REM Process each MP3 file in the folder
-for %%F in ("%input_folder%\*.mp3") do (
+REM Call the recursive function
+call :ProcessFolder "%input_folder%"
+
+echo Processing complete.
+echo New video files with added audio have been saved in their respective folders.
+
+goto :end
+
+:ProcessFolder
+REM Check if the current folder name contains 'backup'
+echo %~1 | findstr /i "backup" >nul
+if %errorlevel% equ 0 (
+    echo Skipping backup folder: %~1
+    exit /b
+)
+
+REM Process each MP3 file ending with "_transcript.mp3" in the current folder
+for %%F in ("%~1\*_transcript.mp3") do (
     set "mp3_file=%%~nxF"
-    set "mp4_file=%%~nF.mp4"
-    set "output_file=%%~nF_audio.mp4"
+    set "mp4_file=%%~nF"
+    set "mp4_file=!mp4_file:_transcript=!"
+    set "output_file=!mp4_file!_audio.mp4"
     
-    if exist "%input_folder%\!mp4_file!" (
-        echo Processing: !mp3_file! and !mp4_file!
-        ffmpeg -i "%input_folder%\!mp4_file!" -i "%input_folder%\!mp3_file!" -c:v copy -c:a aac -strict experimental "%input_folder%\!output_file!" -y
+    if exist "%~1\!mp4_file!.mp4" (
+        echo Processing: !mp3_file! and !mp4_file!.mp4
+        ffmpeg -i "%~1\!mp4_file!.mp4" -i "%~1\!mp3_file!" -c:v copy -c:a aac -strict experimental "%~1\!output_file!" -y
         if errorlevel 1 (
-            echo Error processing !mp4_file! with !mp3_file!
+            echo Error processing !mp4_file!.mp4 with !mp3_file!
         ) else (
             echo Created: !output_file!
         )
@@ -45,8 +61,12 @@ for %%F in ("%input_folder%\*.mp3") do (
     echo.
 )
 
-echo Processing complete.
-echo New video files with added audio have been saved in: %input_folder%
+REM Recursively process subfolders
+for /d %%D in ("%~1\*") do (
+    call :ProcessFolder "%%~fD"
+)
+
+exit /b
 
 :end
 echo.
