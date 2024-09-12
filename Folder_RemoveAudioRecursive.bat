@@ -57,5 +57,6 @@ for /d %%D in ("%current_folder%\*") do (
     )
 )
 
+pause
 endlocal
 exit /b

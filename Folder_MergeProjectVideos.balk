@@ -26,31 +26,23 @@ if not exist "%json_file%" (
 )
 
 REM Create a temporary file to store the list of videos
-set "temp_file=%TEMP%\video_list.txt"
+set "temp_file=%input_folder%\video_list.txt"
 
-REM Start with global_props.mp4 if it exists
-if exist "%input_folder%\global_props.mp4" (
-    echo file '%input_folder%\global_props.mp4' > "%temp_file%"
+REM Use PowerShell to parse JSON, get the order array, and create the video list file
+powershell -Command "$json = Get-Content '%json_file%' | ConvertFrom-Json; if (Test-Path '%input_folder%\global_props.mp4') { Add-Content '%temp_file%' \"file '%input_folder%\global_props.mp4'\" }; $json.order | ForEach-Object { Add-Content '%temp_file%' \"file '%input_folder%\$_'\" }"
+
+if not exist "%temp_file%" (
+    echo Error: Failed to create video list file.
+    pause
+    exit /b 1
 )
 
-REM Read the order array from global_props.json and add to the temp file
-for /f "tokens=2 delims=:," %%a in ('findstr /C:"\"order\":" "%json_file%"') do (
-    set "order_line=%%~a"
-    set "order_line=!order_line:[=!"
-    set "order_line=!order_line:]=!"
-    for %%f in (!order_line!) do (
-        set "file=%%~f"
-        echo file '%input_folder%\!file!' >> "%temp_file%"
-    )
-)
+echo Content of video_list.txt:
+type "%temp_file%"
 
-REM Extract the title from global_props.json, remove punctuation, and replace spaces with underscores
-for /f "tokens=2 delims=:," %%a in ('findstr /C:"\"title\":" "%json_file%"') do (
-    set "title=%%~a"
-    set "title=!title:"=!"
-    set "title=!title: =_!"
-    for %%b in (^& ^< ^> ^^ ^| ' ^, ^. ^; ^: ^/) do set "title=!title:%%b=!"
-)
+
+REM Extract the title from global_props.json using PowerShell
+for /f "delims=" %%a in ('powershell -Command "$json = Get-Content '%json_file%' | ConvertFrom-Json; $json.title"') do set "title=%%a"
 
 if not defined title (
     echo Error: Unable to extract title from global_props.json
@@ -58,18 +50,24 @@ if not defined title (
     exit /b 1
 )
 
+REM Remove punctuation and replace spaces with underscores
+set "title=!title: =_!"
+for %%b in (^& ^< ^> ^^ ^| ' ^, ^. ^; ^: ^/) do set "title=!title:%%b=!"
+
 echo Extracted title: !title!
+
 
 REM Construct the ffmpeg command
 set "output_file=%input_folder%\!title!.mp4"
 set "ffmpeg_cmd=ffmpeg -y -f concat -safe 0 -i "%temp_file%" -c copy "%output_file%""
+
 
 REM Display the ffmpeg command for confirmation
 echo.
 echo FFmpeg command to be executed:
 echo !ffmpeg_cmd!
 echo.
-pause
+
 set /p "execute=Execute this command? (Y/N): "
 if /i "!execute!" neq "Y" goto :eof
 
