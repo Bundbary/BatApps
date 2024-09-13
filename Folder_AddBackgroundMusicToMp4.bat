@@ -17,11 +17,11 @@ REM Confirmation prompt
 set /p "confirm=Press Y if you ran this file on purpose. (Y/N): "
 if /i "%confirm%" neq "Y" goto :end
 
-REM Get folder path from user
-set /p "input_folder=Enter the path to the folder containing MP4 files: "
+REM Get root folder path from user
+set /p "root_folder=Enter the root path to search for MP4 files: "
 
 REM Check if the folder exists
-if not exist "%input_folder%" (
+if not exist "%root_folder%" (
     echo Error: The specified folder does not exist.
     goto :end
 )
@@ -35,23 +35,46 @@ if not exist "%bg_music%" (
     goto :end
 )
 
-echo Processing files in: %input_folder%
+echo Processing files in: %root_folder%
 echo Using background music: %bg_music%
 
-REM Process each MP4 file in the folder
-for %%F in ("%input_folder%\*.mp4") do (
-    set "mp4_file=%%~nxF"
-    set "output_file=%%~nF_bgmusic.mp4"
+REM Process files recursively
+call :ProcessFolder "%root_folder%"
+
+echo Processing complete.
+goto :end
+
+:ProcessFolder
+set "current_folder=%~1"
+
+REM Skip folders containing "backup" in the name
+echo "%current_folder%" | findstr /i "backup" >nul
+if %errorlevel% equ 0 (
+    echo Skipping backup folder: %current_folder%
+    exit /b
+)
+
+REM Process MergedPreBGMusic.mp4 file in the current folder
+if exist "%current_folder%\MergedPreBGMusic.mp4" (
+    set "mp4_file=MergedPreBGMusic.mp4"
+    set "output_file=MergedWithBGMusic.mp4"
     
-    echo Processing: !mp4_file!
+    echo Processing: %current_folder%\!mp4_file!
     
     REM Get video duration
-    for /f "delims=" %%D in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "%%F"') do set "video_duration=%%D"
+    for /f "delims=" %%D in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "%current_folder%\!mp4_file!"') do set "video_duration=%%D"
     
     REM Calculate fade out start time
     set /a "fade_out_start=video_duration - fade_out_duration"
     
-    ffmpeg -i "%%F" -i "%bg_music%" -filter_complex "[1:a]afade=t=in:st=0:d=%fade_in_duration%,apad,atrim=0:!video_duration!,afade=t=out:st=!fade_out_start!:d=%fade_out_duration%[audio]" -map 0:v -map "[audio]" -c:v copy -c:a aac -strict experimental "%input_folder%\!output_file!" -y
+    REM Prepare background music with fade in/out
+    ffmpeg -i "%bg_music%" -af "afade=t=in:st=0:d=%fade_in_duration%,afade=t=out:st=!fade_out_start!:d=%fade_out_duration%,atrim=0:!video_duration!" -acodec aac "%current_folder%\temp_bgm.m4a"
+    
+    REM Combine original video with new background music
+    ffmpeg -i "%current_folder%\!mp4_file!" -i "%current_folder%\temp_bgm.m4a" -c:v copy -filter_complex "[0:a][1:a]amix=inputs=2:duration=longest" -c:a aac "%current_folder%\!output_file!" -y
+    
+    REM Remove temporary background music file
+    del "%current_folder%\temp_bgm.m4a"
     
     if errorlevel 1 (
         echo Error processing !mp4_file!
@@ -61,8 +84,12 @@ for %%F in ("%input_folder%\*.mp4") do (
     echo.
 )
 
-echo Processing complete.
-echo New video files with added background music have been saved in: %input_folder%
+REM Process subfolders
+for /d %%D in ("%current_folder%\*") do (
+    call :ProcessFolder "%%D"
+)
+
+exit /b
 
 :end
 echo.
