@@ -55,11 +55,20 @@ for /f "tokens=*" %%a in ('ffprobe -v error -select_streams v:0 -show_entries st
 REM Prepare ffmpeg command
 set "filter_complex=[0:v]fps=!intro_framerate!,scale=1920:1080,fade=t=out:st=!fade_start!:d=1[v0];[2:v]fps=!intro_framerate!,fade=t=in:st=0:d=1[v1];[v0][1:a][v1][2:a]concat=n=2:v=1:a=1[outv][outa]"
 
-REM Execute ffmpeg command
-ffmpeg -y -i "%intro_file%" -f lavfi -t !intro_duration! -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "%main_file%" ^
+REM Execute optimized ffmpeg command
+ffmpeg -y ^
+-i "%intro_file%" ^
+-f lavfi -t !intro_duration! -i anullsrc=channel_layout=stereo:sample_rate=44100 ^
+-i "%main_file%" ^
 -filter_complex "!filter_complex!" ^
--map "[outv]" -map "[outa]" ^
--c:v libx264 -crf 23 -preset medium -c:a aac -b:a 192k ^
+-map "[outv]" ^
+-map "[outa]" ^
+-c:v libx264 ^
+-preset superfast ^
+-crf 23 ^
+-c:a aac ^
+-b:a 192k ^
+-movflags +faststart ^
 "!output_file!"
 
 if !errorlevel! equ 0 (
