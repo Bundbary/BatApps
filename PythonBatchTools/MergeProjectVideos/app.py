@@ -19,7 +19,7 @@ def merge_videos(folder_path):
     filter_complex += f"concat=n={len(clip_order)}:v=1:a=1[outv][outa]"
     
     # Prepare the FFmpeg command
-    cmd = ["ffmpeg"]
+    cmd = ["ffmpeg", "-y"]  # Force overwrite
     for clip in clip_order:
         input_file = os.path.join(folder_path, clip)
         cmd.extend(["-i", input_file])
@@ -28,7 +28,7 @@ def merge_videos(folder_path):
         "-map", "[outv]",
         "-map", "[outa]",
         "-c:v", "libx264",
-        "-preset", "medium",
+        "-preset", "superfast",  # Changed to superfast
         "-crf", "23",
         "-c:a", "aac",
         "-b:a", "192k",
