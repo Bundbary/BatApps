@@ -8,6 +8,8 @@ import psutil
 import traceback
 import math
 import logging
+import subprocess
+import shutil
 
 # Set up logging
 logging.basicConfig(
@@ -20,15 +22,58 @@ def pixels_to_points(pixels):
     return pixels * 72 / 96  # Convert pixels to points
 
 
-# def force_terminate_powerpoint():
-#     for proc in psutil.process_iter(["name"]):
-#         if proc.info["name"] == "POWERPNT.EXE":
-#             logger.info(f"Forcefully terminating PowerPoint process (PID: {proc.pid})")
-#             try:
-#                 proc.terminate()
-#                 proc.wait(timeout=5)
-#             except psutil.TimeoutExpired:
-#                 proc.kill()
+def convert_video(input_file, output_dir):
+    logger.info(f"Starting video conversion for: {input_file}")
+    
+    input_dir = os.path.dirname(input_file)
+    file_name = os.path.basename(input_file)
+    backup_dir = os.path.join(input_dir, "_backup")
+    
+    # Create backup folder if it doesn't exist
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    # Move original file to backup folder
+    shutil.move(input_file, os.path.join(backup_dir, file_name))
+    
+    # Convert video
+    ffmpeg_command = [
+        "ffmpeg",
+        "-i", os.path.join(backup_dir, file_name),
+        "-c:v", "libx264",
+        "-profile:v", "high",
+        "-preset", "medium",
+        "-crf", "23",
+        "-vf", "format=yuv420p",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        input_file,
+        "-y"
+    ]
+    
+    try:
+        subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+        logger.info(f"Successfully converted {file_name}")
+        
+        # Verify the converted file
+        ffprobe_command = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "stream=codec_name,profile,level",
+            "-of", "default=noprint_wrappers=1",
+            input_file
+        ]
+        result = subprocess.run(ffprobe_command, capture_output=True, text=True)
+        logger.info(f"Converted file details:\n{result.stdout}")
+        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error converting {file_name}: {e}")
+        logger.error(f"FFmpeg error output: {e.stderr}")
+        # Restore original file
+        shutil.move(os.path.join(backup_dir, file_name), input_file)
+        raise
+    
+    logger.info(f"Video conversion completed for: {input_file}")
 
 
 def force_terminate_powerpoint():
@@ -584,6 +629,9 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             # Force terminate PowerPoint immediately after video export
             logger.info("Force terminating PowerPoint")
             force_terminate_powerpoint()
+            # Convert the exported video
+            logger.info("Starting video conversion")
+            convert_video(output_video_path, output_dir)
 
         except Exception as e:
             logger.error(
