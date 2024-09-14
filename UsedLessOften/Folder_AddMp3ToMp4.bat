@@ -10,7 +10,7 @@ if %errorlevel% neq 0 (
 )
 
 REM Confirmation prompt
-set /p "confirm=Press Y if you ran this file on purpose. (Y/N): "
+set /p "confirm=NOTE: The python app, Batch_transcript_to_voice currently does this in our video process, but this file does still work.       Press Y if you ran this file on purpose. (Y/N): "
 if /i "%confirm%" neq "Y" goto :end
 
 REM Get folder path from user
