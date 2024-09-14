@@ -349,67 +349,42 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             shapes = []
 
-            # Layout settings
+           # Layout settings
             margin = pixels_to_points(layout_settings["slide"]["margin"])
-            img_width = (
-                slide_width * layout_settings["layout"]["image_width_percentage"] / 100
-            )
-            content_width = slide_width - img_width - margin * 2
+            text_area_width_percentage = 40  # Fixed at 40% as per your requirement
+            text_area_width = slide_width * (text_area_width_percentage / 100)
+            content_width = text_area_width - margin * 2
 
             logger.info("Adding main content elements")
 
-            # Add the actual image
-            image_path = os.path.join(output_dir, "intro_image.jpg")
-            logger.info(f"Attempting to add image from: {image_path}")
+            # Add the full-size image as a shape covering the entire slide
+            image_path = os.path.join(output_dir, 'intro_image.jpg')
             if os.path.exists(image_path):
                 try:
-                    left = slide_width - img_width
-                    top = 0
-                    height = slide_height
-                    image_shape = slide.Shapes.AddPicture(
-                        image_path,
+                    background_image = slide.Shapes.AddPicture(
+                        FileName=image_path,
                         LinkToFile=False,
                         SaveWithDocument=True,
-                        Left=left,
-                        Top=top,
-                        Width=img_width,
-                        Height=height,
+                        Left=0,
+                        Top=0,
+                        Width=slide_width,
+                        Height=slide_height
                     )
-                    image_shape.Name = "IntroImage"
-                    shapes.append(image_shape)
-                    logger.info(f"Added intro image successfully: {image_path}")
+                    background_image.ZOrder(3)  # Send to back
+                    logger.info(f"Added full-size intro image as shape successfully: {image_path}")
                 except Exception as e:
-                    logger.error(f"Error adding intro image: {str(e)}")
-                    # If there's an error adding the image, we'll create a placeholder shape
-                    img_placeholder = slide.Shapes.AddShape(
-                        1,  # msoShapeRectangle
-                        left,
-                        top,
-                        img_width,
-                        height,
-                    )
-                    img_placeholder.Fill.ForeColor.RGB = 13421772  # Light gray
-                    img_placeholder.Line.Visible = False  # Remove border
-                    img_placeholder.Name = "ImagePlaceholder"
-                    shapes.append(img_placeholder)
-                    logger.info(
-                        "Added image placeholder due to error with actual image"
-                    )
+                    logger.error(f"Error adding full-size intro image as shape: {str(e)}")
             else:
                 logger.warning(f"Image file not found: {image_path}")
-                # Create a placeholder shape if the image file is not found
-                img_placeholder = slide.Shapes.AddShape(
-                    1,  # msoShapeRectangle
-                    slide_width - img_width,
-                    0,
-                    img_width,
-                    slide_height,
-                )
-                img_placeholder.Fill.ForeColor.RGB = 13421772  # Light gray
-                img_placeholder.Line.Visible = False  # Remove border
-                img_placeholder.Name = "ImagePlaceholder"
-                shapes.append(img_placeholder)
-                logger.info("Added image placeholder due to missing image file")
+
+            # Add text area overlay
+            text_area = slide.Shapes.AddShape(1, 0, 0, text_area_width, slide_height)
+            text_area.Fill.ForeColor.RGB = 0xFFFFFF  # White color
+            # text_area.Fill.Transparency = 0.5  # 50% transparent (adjust as needed)
+            text_area.Line.Visible = False
+            text_area.Name = "TextArea"
+            shapes.append(text_area)
+            logger.info(f"Added text area overlay with width: {text_area_width} and transparency: 50%")
 
             current_top = margin
 
@@ -750,40 +725,68 @@ def add_bullet_point(slide, text, left, top, width, height, settings):
         logger.error(traceback.format_exc())
         return None
 
+def cleanup_duplicate_entries(video_info):
+    # Remove duplicate 'global_props.mp4' from order
+    if 'order' in video_info:
+        video_info['order'] = ['global_props.mp4'] + [item for item in video_info['order'] if item != 'global_props.mp4']
+
+    # Remove duplicate Introduction timestamps
+    if 'timestamps' in video_info:
+        seen_intro = False
+        cleaned_timestamps = []
+        for ts in video_info['timestamps']:
+            if ts['text'] == "Introduction" and ts['time'] == "00:00:00":
+                if not seen_intro:
+                    cleaned_timestamps.append(ts)
+                    seen_intro = True
+            else:
+                cleaned_timestamps.append(ts)
+        video_info['timestamps'] = cleaned_timestamps
+
+    return video_info
 
 def prepend_intro_timestamp(video_info_path):
     # Read the existing JSON file
     with open(video_info_path, "r") as file:
         video_info = json.load(file)
 
-    # Add 'global_props.mp4' to the beginning of the order array
-    if "order" in video_info:
-        video_info["order"].insert(0, "global_props.mp4")
-    else:
-        video_info["order"] = ["global_props.mp4"]
+    # Clean up any existing duplicate entries
+    video_info = cleanup_duplicate_entries(video_info)
+
+
+    # Check if 'global_props.mp4' is already in the order array
+    if 'order' in video_info and 'global_props.mp4' not in video_info['order']:
+        video_info['order'].insert(0, 'global_props.mp4')
+    elif 'order' not in video_info:
+        video_info['order'] = ['global_props.mp4']
 
     # Create the new intro timestamp
-    intro_timestamp = {"text": "Introduction", "time": "00:00:00", "duration": 10}
+    intro_timestamp = {
+        "text": "Introduction",
+        "time": "00:00:00",
+        "duration": 10
+    }
 
-    # Prepend the intro timestamp to the timestamps array
-    if "timestamps" in video_info:
-        video_info["timestamps"].insert(0, intro_timestamp)
+    # Check if the Introduction timestamp already exists
+    if 'timestamps' in video_info:
+        if not any(ts['text'] == "Introduction" and ts['time'] == "00:00:00" for ts in video_info['timestamps']):
+            video_info['timestamps'].insert(0, intro_timestamp)
+            
+            # Adjust all other timestamps by adding 10 seconds
+            for timestamp in video_info['timestamps'][1:]:
+                time_parts = timestamp['time'].split(':')
+                hours = int(time_parts[0])
+                minutes = int(time_parts[1])
+                seconds = int(time_parts[2])
+                
+                total_seconds = hours * 3600 + minutes * 60 + seconds + 10
+                new_hours = total_seconds // 3600
+                new_minutes = (total_seconds % 3600) // 60
+                new_seconds = total_seconds % 60
+                
+                timestamp['time'] = f"{new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}"
     else:
-        video_info["timestamps"] = [intro_timestamp]
-
-    # Adjust all other timestamps by adding 10 seconds
-    for timestamp in video_info["timestamps"][1:]:
-        time_parts = timestamp["time"].split(":")
-        hours = int(time_parts[0])
-        minutes = int(time_parts[1])
-        seconds = int(time_parts[2])
-
-        total_seconds = hours * 3600 + minutes * 60 + seconds + 10
-        new_hours = total_seconds // 3600
-        new_minutes = (total_seconds % 3600) // 60
-        new_seconds = total_seconds % 60
-
-        timestamp["time"] = f"{new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}"
+        video_info['timestamps'] = [intro_timestamp]
 
     # Save the modified video_info back to the JSON file
     with open(video_info_path, "w") as file:
