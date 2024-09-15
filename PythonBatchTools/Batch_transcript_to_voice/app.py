@@ -66,6 +66,7 @@ def remove_audio_from_video(video_path, output_path):
         print(f"FFmpeg stderr: {e.stderr}")
         return False
 
+
 def process_folder(folder_path, api_key):
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -74,17 +75,17 @@ def process_folder(folder_path, api_key):
 
     global_props_path = Path(folder_path) / 'global_props.json'
     
-    if global_props_path.exists():
-        try:
-            with open(global_props_path, 'r', encoding='utf-8') as f:
-                global_props = json.load(f)
-            
-            order = global_props.get('order', [])
-        except Exception as e:
-            print(f"Error reading global_props.json in {folder_path}: {str(e)}")
-            return
-    else:
+    if not global_props_path.exists():
         print(f"No global_props.json found in {folder_path}. Skipping this folder.")
+        return
+
+    try:
+        with open(global_props_path, 'r', encoding='utf-8') as f:
+            global_props = json.load(f)
+        
+        order = global_props.get('order', [])
+    except Exception as e:
+        print(f"Error reading global_props.json in {folder_path}: {str(e)}")
         return
 
     backup_folder = Path(folder_path) / '_backups'
@@ -93,73 +94,69 @@ def process_folder(folder_path, api_key):
     for mp4_file in order:
         mp4_path = Path(folder_path) / mp4_file
         json_file = Path(folder_path) / f"{Path(mp4_file).stem}.json"
-        audio_file = Path(folder_path) / f"{Path(mp4_file).stem}_temp_audio.mp3"
-        temp_output_video = Path(folder_path) / f"{Path(mp4_file).stem}_temp.mp4"
 
         if not mp4_path.exists():
             print(f"Warning: {mp4_file} not found in {folder_path}. Skipping.")
             continue
 
-        transcript_text = get_transcript_from_json(json_file)
-        
         try:
+            transcript_text = get_transcript_from_json(json_file)
+            
             if not transcript_text:
-                print(f"No text found for {mp4_file}. Removing existing audio.")
-                if remove_audio_from_video(mp4_path, temp_output_video):
-                    print(f"Successfully processed {mp4_file} (removed audio)")
-                else:
-                    print(f"Failed to remove audio from {mp4_file}")
-                    continue
-            else:
-                sanitized_text = sanitize_text(transcript_text)
-                print(f"Processing file: {mp4_file}")
-                print(f"Text content (first 100 chars): {sanitized_text[:100]}...")
+                print(f"No transcript found for {mp4_file}. Skipping this file.")
+                continue
 
-                max_chars = 250  # Free tier limit
-                if len(sanitized_text) > max_chars:
-                    print(f"Text too long ({len(sanitized_text)} chars). Truncating to {max_chars} chars.")
-                    sanitized_text = sanitized_text[:max_chars]
+            sanitized_text = sanitize_text(transcript_text)
+            print(f"Processing file: {mp4_file}")
+            print(f"Text content (first 100 chars): {sanitized_text[:100]}...")
 
-                payload = {
-                    "Engine": "neural",
-                    "VoiceId": "ai3-Jony",
-                    "LanguageCode": "en-US",
-                    "Text": sanitized_text,
-                    "OutputFormat": "mp3",
-                    "SampleRate": "48000",
-                    "Effect": "default",
-                    "MasterVolume": "0",
-                    "MasterSpeed": "0",
-                    "MasterPitch": "0"
-                }
+            max_chars = 250  # Free tier limit
+            if len(sanitized_text) > max_chars:
+                print(f"Text too long ({len(sanitized_text)} chars). Truncating to {max_chars} chars.")
+                sanitized_text = sanitized_text[:max_chars]
 
-                response = requests.post("https://developer.voicemaker.in/voice/api", headers=headers, json=payload)
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    if result.get('success'):
-                        audio_url = result['path']
-                        print(f"Audio generated. Downloading from: {audio_url}")
-                        audio_response = requests.get(audio_url)
-                        with open(audio_file, 'wb') as f:
-                            f.write(audio_response.content)
-                        print(f"Generated MP3 for {mp4_file}")
+            payload = {
+                "Engine": "neural",
+                "VoiceId": "ai3-Jony",
+                "LanguageCode": "en-US",
+                "Text": sanitized_text,
+                "OutputFormat": "mp3",
+                "SampleRate": "48000",
+                "Effect": "default",
+                "MasterVolume": "0",
+                "MasterSpeed": "0",
+                "MasterPitch": "0"
+            }
 
-                        # Add audio to video
-                        if not add_audio_to_video(mp4_path, audio_file, temp_output_video):
-                            print(f"Failed to add audio to {mp4_file}")
-                            continue
-                    else:
-                        print(f"API returned success=false. Message: {result.get('message')}")
-                        if "character limit" in result.get('message', '').lower():
-                            print("You have reached your character limit. Please recharge your account at Voicemaker.")
-                            return  # Stop processing further files
-                else:
-                    print(f"API request failed with status code: {response.status_code}")
-                    print(f"Response content: {response.text}")
-                    if response.status_code == 400 and "character limit" in response.text.lower():
-                        print("You have reached your character limit. Please recharge your account at Voicemaker.")
-                        return  # Stop processing further files
+            response = requests.post("https://developer.voicemaker.in/voice/api", headers=headers, json=payload)
+            
+            if response.status_code != 200:
+                print(f"API request failed for {mp4_file} with status code: {response.status_code}")
+                print(f"Response content: {response.text}")
+                continue
+
+            result = response.json()
+            if not result.get('success'):
+                print(f"API returned success=false for {mp4_file}. Message: {result.get('message')}")
+                continue
+
+            audio_url = result['path']
+            print(f"Audio generated for {mp4_file}. Downloading from: {audio_url}")
+            
+            audio_file = Path(folder_path) / f"{Path(mp4_file).stem}_temp_audio.mp3"
+            temp_output_video = Path(folder_path) / f"{Path(mp4_file).stem}_temp.mp4"
+
+            audio_response = requests.get(audio_url)
+            with open(audio_file, 'wb') as f:
+                f.write(audio_response.content)
+
+            if not add_audio_to_video(mp4_path, audio_file, temp_output_video):
+                print(f"Failed to add audio to {mp4_file}. Skipping this file.")
+                if audio_file.exists():
+                    os.remove(audio_file)
+                if temp_output_video.exists():
+                    os.remove(temp_output_video)
+                continue
 
             # Move original file to backup folder
             backup_path = backup_folder / mp4_file
@@ -170,13 +167,23 @@ def process_folder(folder_path, api_key):
             os.rename(temp_output_video, mp4_path)
             print(f"Renamed processed file to: {mp4_path}")
 
-            # Remove temporary audio file if it exists
-            if audio_file.exists():
-                os.remove(audio_file)
-                print(f"Removed temporary audio file: {audio_file}")
+            # Remove temporary audio file
+            os.remove(audio_file)
+            print(f"Removed temporary audio file: {audio_file}")
 
         except Exception as e:
             print(f"Error processing {mp4_file}: {str(e)}")
+            print(f"Skipping {mp4_file} and leaving the original file untouched.")
+            # Clean up any temporary files that might have been created
+            audio_file = Path(folder_path) / f"{Path(mp4_file).stem}_temp_audio.mp3"
+            temp_output_video = Path(folder_path) / f"{Path(mp4_file).stem}_temp.mp4"
+            if audio_file.exists():
+                os.remove(audio_file)
+            if temp_output_video.exists():
+                os.remove(temp_output_video)
+            continue
+
+
 
 def process_files_recursively(root_folder, api_key):
     for folder_path, subfolders, files in os.walk(root_folder):
