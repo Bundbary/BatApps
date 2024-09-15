@@ -43,7 +43,7 @@ exit /b
 set "current_folder=%~1"
 set "intro_file=%current_folder%\global_props.mp4"
 set "main_file=%current_folder%\output.mp4"
-set "output_file=%current_folder%\MergedPreBGMusic.mp4"
+set "output_file=%current_folder%\presentation.mp4"
 
 REM Get duration of intro video
 for /f "tokens=*" %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "%intro_file%"') do set intro_duration=%%a
