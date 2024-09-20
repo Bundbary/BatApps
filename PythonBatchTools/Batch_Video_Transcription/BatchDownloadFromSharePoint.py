@@ -6,14 +6,26 @@ import os
 
 # SharePoint site and folder details
 site_url = "https://sdiclarity.sharepoint.com/sites/ReckittEclipse-TrainingVideos"
-folder_url = "/sites/ReckittEclipse-TrainingVideos/Shared Documents/Training Videos/Training Video Footage/Jeremy Narrated Primary/August 9 Narrated/raw"
+# folder_url = "/sites/ReckittEclipse-TrainingVideos/Shared Documents/Training Videos/Training Video Footage/Jeremy Narrated Primary/August 9 Narrated/raw"
+
+folder_url = "/sites/ReckittEclipse-TrainingVideos/Shared Documents/Training Videos/Training Video Footage/Secondary Packaging"
+
+
+
+
+
+
 
 # Authentication details
 username = "bpennington@sdiclarity.com"
-password = "(JJj-vXN3EHpPtv"
+# password = "(JJj-vXN3EHpPtv"
+password = "Bund0064!"
+
+
+
 
 # Directory to save downloaded files
-download_dir = "c:/Users/bpenn/ExpectancyLearning/BatApps/PythonBatchTools/output"  # Change to your desired path
+download_dir = "D:/Brad/raw_video"  # Change to your desired path
 
 # Ensure the download directory exists
 os.makedirs(download_dir, exist_ok=True)
