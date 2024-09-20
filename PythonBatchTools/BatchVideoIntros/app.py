@@ -836,6 +836,21 @@ def prepend_intro_timestamp(video_info_path):
     else:
         video_info['timestamps'] = [intro_timestamp]
 
+    # Add or update the 'transcript' array
+    if 'transcript' not in video_info:
+        video_info['transcript'] = []
+
+    # Combine title and subtitle
+    combined_text = f"{video_info['title']}. {video_info['subtitle']}"
+
+    # Create new transcript item (without timestamp)
+    new_transcript_item = {
+        "text": combined_text
+    }
+
+    # Append the new item to the transcript array
+    video_info['transcript'].append(new_transcript_item)
+
     # Save the modified video_info back to the JSON file
     with open(video_info_path, "w") as file:
         json.dump(video_info, file, indent=4)

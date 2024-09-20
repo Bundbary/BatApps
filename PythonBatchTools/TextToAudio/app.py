@@ -81,5 +81,6 @@ def create_text_files(json_file, api_choice):
 
 if __name__ == "__main__":
     json_file_path = r'c:\Users\bpenn\ExpectancyLearning\BatApps\PythonBatchTools\PullJSONFromHTMLTable\slides.json'
-    api_choice = input("Choose an API (voicemaker/other_api): ").lower()
+    # api_choice = input("Choose an API (voicemaker/other_api): ").lower()
+    api_choice = "voicemaker"
     create_text_files(json_file_path, api_choice)
