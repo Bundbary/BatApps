@@ -352,7 +352,11 @@ def build_timestamp_with_dots(slide, text, time_str, max_width, font_name, font_
     return formatted_text
 
 
+
 def create_presentation(video_info_path, layout_settings_path, output_dir):
+    base_name = os.path.splitext(os.path.basename(video_info_path))[0]
+    logger.info(f"Starting presentation creation for {base_name}")
+    
     try:
         # Prepend intro timestamp, adjust other timestamps, and save changes
         video_info = prepend_intro_timestamp(video_info_path)
@@ -364,11 +368,8 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
         output_dir = os.path.abspath(output_dir)
 
         # Generate output file names based on input JSON file name
-        base_name = os.path.splitext(os.path.basename(video_info_path))[0]
         output_pptx_path = os.path.join(output_dir, f"{base_name}.pptx")
         output_video_path = os.path.join(output_dir, f"{base_name}.mp4")
-
-        logger.info(f"Starting presentation creation for {base_name}")
 
         powerpoint = None
         presentation = None
@@ -388,13 +389,11 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             presentation.PageSetup.SlideHeight = slide_height
 
             slide = presentation.Slides.Add(1, 12)  # 12 is ppLayoutBlank
-            logger.info(
-                f"Presentation and slide created in {time.time() - start_time:.2f} seconds"
-            )
+            logger.info(f"Presentation and slide created in {time.time() - start_time:.2f} seconds")
 
             shapes = []
 
-           # Layout settings
+            # Layout settings
             margin = pixels_to_points(layout_settings["slide"]["margin"])
             text_area_width_percentage = 40  # Fixed at 40% as per your requirement
             text_area_width = slide_width * (text_area_width_percentage / 100)
@@ -425,7 +424,6 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             # Add text area overlay
             text_area = slide.Shapes.AddShape(1, 0, 0, text_area_width, slide_height)
             text_area.Fill.ForeColor.RGB = 0xFFFFFF  # White color
-            # text_area.Fill.Transparency = 0.5  # 50% transparent (adjust as needed)
             text_area.Line.Visible = False
             text_area.Name = "TextArea"
             shapes.append(text_area)
@@ -505,27 +503,19 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
                 # Calculate the bottom of the subtitle box
                 subtitle_bottom = subtitle_box.Top + actual_text_height
-                logger.info(
-                    f"Subtitle added successfully. Bottom position: {subtitle_bottom}"
-                )
+                logger.info(f"Subtitle added successfully. Bottom position: {subtitle_bottom}")
             else:
                 logger.error("Error: Failed to create subtitle box")
-                subtitle_bottom = (
-                    current_top + subtitle_height
-                )  # Fallback if subtitle creation fails
+                subtitle_bottom = current_top + subtitle_height  # Fallback if subtitle creation fails
 
             # Add bullet points
             if "bullets" in video_info:
                 logger.info("Adding bullet points")
                 bullet_settings = layout_settings["bullets"]
                 default_spacing = 10  # You can adjust this default value
-                bullet_spacing = pixels_to_points(
-                    bullet_settings.get("spacing", default_spacing)
-                )
+                bullet_spacing = pixels_to_points(bullet_settings.get("spacing", default_spacing))
 
-                current_top = (
-                    subtitle_bottom + bullet_spacing + 20
-                )  # Start bullets below subtitle
+                current_top = subtitle_bottom + bullet_spacing + 20  # Start bullets below subtitle
 
                 for i, bullet_text in enumerate(video_info["bullets"]):
                     bullet_box = add_bullet_point(
@@ -547,12 +537,8 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                         # Get the actual height of the bullet point
                         actual_bullet_height = bullet_box.Height
 
-                        logger.info(
-                            f"Added bullet point {i+1} successfully at position {current_top}"
-                        )
-                        logger.info(
-                            f"Bullet point {i+1} actual height: {actual_bullet_height}"
-                        )
+                        logger.info(f"Added bullet point {i+1} successfully at position {current_top}")
+                        logger.info(f"Bullet point {i+1} actual height: {actual_bullet_height}")
 
                         # Update current_top for the next bullet
                         current_top += actual_bullet_height + bullet_spacing
@@ -565,16 +551,12 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             logger.info(f"Bullet spacing used: {bullet_spacing}")
 
             # Add some padding below the subtitle
-            timestamp_start = subtitle_bottom + pixels_to_points(
-                20
-            )  # 20 points of padding
+            timestamp_start = subtitle_bottom + pixels_to_points(20)  # 20 points of padding
 
             # Add timestamps
             logger.info(f"Starting to add {len(video_info['timestamps'])} timestamps")
             timestamp_height = pixels_to_points(30)
-            timestamp_spacing = pixels_to_points(
-                layout_settings["timestamps"].get("spacing", 10)
-            )
+            timestamp_spacing = pixels_to_points(layout_settings["timestamps"].get("spacing", 10))
 
             # Add some extra spacing between bullets and timestamps
             current_top += pixels_to_points(20)  # You can adjust this value as needed
@@ -604,9 +586,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 if ts_box is not None:
                     ts_box.Name = f"Timestamp{i+1}"
                     shapes.append(ts_box)
-                    logger.info(
-                        f"Added timestamp {i+1} successfully at position {current_top}"
-                    )
+                    logger.info(f"Added timestamp {i+1} successfully at position {current_top}")
                     current_top += ts_box.Height + timestamp_spacing
                 else:
                     logger.error(f"Error: Failed to create timestamp box {i+1}")
@@ -634,13 +614,12 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             convert_video(output_video_path, output_dir)
 
         except Exception as e:
-            logger.error(
-                f"An error occurred during presentation creation or video export: {str(e)}"
-            )
+            logger.error(f"An error occurred during presentation creation or video export: {str(e)}")
             logger.error(traceback.format_exc())
             # Force terminate PowerPoint in case of an exception
             logger.info("Force terminating PowerPoint due to exception")
             force_terminate_powerpoint()
+            raise  # Re-raise the exception to be caught in the outer try-except block
         finally:
             # These operations might not be necessary now, but we'll keep them as a safeguard
             if presentation:
@@ -661,49 +640,47 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             gc.collect()
 
     except Exception as outer_error:
-        logger.error(f"An outer error occurred: {str(outer_error)}")
+        logger.error(f"An outer error occurred while processing {video_info_path}: {str(outer_error)}")
         logger.error(traceback.format_exc())
-
-    logger.info(
-        f"Presentation creation and video export process completed for {base_name}"
-    )
-
+    
+    logger.info(f"Presentation creation and video export process completed for {base_name}")
+    
 
 def process_folder(input_folder):
     logger.info(f"Starting batch processing for folder: {input_folder}")
 
-    # Ensure the input folder exists
     if not os.path.exists(input_folder):
         logger.error(f"Input folder does not exist: {input_folder}")
         return
 
-    # Get the path to layout_settings.json in the same directory as the script
     script_dir = os.path.dirname(os.path.abspath(__file__))
     layout_settings_path = os.path.join(script_dir, "layout_settings.json")
 
     if not os.path.exists(layout_settings_path):
-        logger.error(
-            f"layout_settings.json not found in the script directory: {script_dir}"
-        )
+        logger.error(f"layout_settings.json not found in the script directory: {script_dir}")
         return
 
     for root, dirs, files in os.walk(input_folder):
-        # Remove '_backups' from dirs to skip it
         if "_backups" in dirs:
             dirs.remove("_backups")
 
-        # Look for global_props.json in each subfolder
         global_props_file = "global_props.json"
         video_info_path = os.path.join(root, global_props_file)
 
         if os.path.exists(video_info_path):
-            output_dir = root  # Use the same folder for output
+            output_dir = root
             logger.info(f"Processing file: {video_info_path}")
-            create_presentation(video_info_path, layout_settings_path, output_dir)
+            try:
+                create_presentation(video_info_path, layout_settings_path, output_dir)
+            except Exception as e:
+                logger.error(f"Failed to process {video_info_path}: {str(e)}")
+                logger.error("Continuing with next presentation...")
+            logger.info(f"Completed processing for: {video_info_path}")
         else:
             logger.info(f"Skipping folder {root}: global_props.json not found")
 
     logger.info("Batch processing completed")
+
 
 
 def export_to_video(presentation, output_path):
@@ -794,9 +771,12 @@ def cleanup_duplicate_entries(video_info):
     return video_info
 
 def prepend_intro_timestamp(video_info_path):
-    # Read the existing JSON file
-    with open(video_info_path, "r") as file:
-        video_info = json.load(file)
+    try:
+        with open(video_info_path, "r") as file:
+            video_info = json.load(file)
+    except json.JSONDecodeError:
+        logger.error(f"Corrupted or invalid JSON file: {video_info_path}")
+        raise  # Re-raise the exception to be caught in create_presentation
 
     # Clean up any existing duplicate entries
     video_info = cleanup_duplicate_entries(video_info)
