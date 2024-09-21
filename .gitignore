@@ -19,3 +19,4 @@ PythonBatchTools/TextToAudio/voice_test
 temp_mp4s
 PythonBatchTools/Batch_transcript_to_voice/temp
 PythonBatchTools/MergeProjectVideos/myenv
+PythonBatchTools/_deprecated
