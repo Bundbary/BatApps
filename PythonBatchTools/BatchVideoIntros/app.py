@@ -604,7 +604,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             # Export to video
             logger.info("Exporting presentation to video")
-            export_to_video(presentation, output_video_path)
+            export_to_video(presentation, output_video_path,layout_settings)
 
             # Force terminate PowerPoint immediately after video export
             logger.info("Force terminating PowerPoint")
@@ -682,16 +682,11 @@ def process_folder(input_folder):
     logger.info("Batch processing completed")
 
 
-
-def export_to_video(presentation, output_path):
+def export_to_video(presentation, output_path, layout_settings):
     try:
         # Ensure the output path is absolute
         abs_output_path = os.path.abspath(output_path)
-
-        # Get the directory of the output path
         output_dir = os.path.dirname(abs_output_path)
-
-        # Ensure the directory exists
         os.makedirs(output_dir, exist_ok=True)
 
         # Check if the file already exists and delete it if it does
@@ -699,10 +694,18 @@ def export_to_video(presentation, output_path):
             logger.info(f"Existing video file found. Deleting: {abs_output_path}")
             os.remove(abs_output_path)
 
-        # Set video export settings
-        presentation.CreateVideo(abs_output_path)
+        # Get the video dimensions from layout settings
+        video_width = layout_settings['video']['width']
+        video_height = layout_settings['video']['height']
 
-        logger.info(f"Starting video export to {abs_output_path}...")
+        # Set video export settings with dimensions from layout settings
+        presentation.CreateVideo(
+            abs_output_path,
+            UseTimingsAndNarrations=True,
+            VertResolution=video_height
+        )
+
+        logger.info(f"Starting video export to {abs_output_path} at {video_width}x{video_height}...")
 
         # Check for file existence and size every second
         start_time = time.time()
@@ -721,7 +724,7 @@ def export_to_video(presentation, output_path):
         logger.error(f"Error during video export: {str(e)}")
         logger.error(traceback.format_exc())
         return False
-
+    
 
 def add_bullet_point(slide, text, left, top, width, height, settings):
     try:
