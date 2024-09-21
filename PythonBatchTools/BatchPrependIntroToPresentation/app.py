@@ -14,17 +14,6 @@ def get_video_duration(file_path):
     )
     return float(result.stdout.strip())
 
-def get_total_frames(file_path):
-    """Get the total number of frames in the video using ffprobe."""
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-         "stream=nb_frames", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-    return int(result.stdout.strip())
-
 def get_video_frame_rate(file_path):
     """Get the frame rate of the video using ffprobe."""
     result = subprocess.run(
@@ -42,15 +31,20 @@ def get_video_frame_rate(file_path):
         frame_rate = float(frame_rate_str)
     return frame_rate
 
+def calculate_total_frames(duration, frame_rate):
+    """Calculate the total number of frames from duration and frame rate."""
+    return int(duration * frame_rate)
 
 def merge_videos(intro_file, main_file, output_file):
     """Merge the intro and main video with a fade effect and show percentage progress."""
     intro_duration = get_video_duration(intro_file)
+    main_duration = get_video_duration(main_file)
     intro_framerate = get_video_frame_rate(intro_file)
+    main_framerate = get_video_frame_rate(main_file)
 
-    # Calculate total frames
-    intro_frames = get_total_frames(intro_file)
-    main_frames = get_total_frames(main_file)
+    # Calculate total frames based on duration and frame rate
+    intro_frames = calculate_total_frames(intro_duration, intro_framerate)
+    main_frames = calculate_total_frames(main_duration, main_framerate)
     total_frames = intro_frames + main_frames
 
     fade_start = intro_duration - 1
@@ -58,7 +52,7 @@ def merge_videos(intro_file, main_file, output_file):
     filter_complex = (
         f"[0:v]fps={intro_framerate},scale=1920:1080,"
         f"fade=t=out:st={fade_start}:d=1[v0];"
-        f"[1:v]fps={intro_framerate},fade=t=in:st=0:d=1[v1];"
+        f"[1:v]fps={main_framerate},fade=t=in:st=0:d=1[v1];"
         f"[v0][0:a][v1][1:a]concat=n=2:v=1:a=1[outv][outa]"
     )
 
@@ -91,7 +85,8 @@ def merge_videos(intro_file, main_file, output_file):
         match = frame_regex.search(line)
         if match:
             current_frame = int(match.group(1))
-            progress = (current_frame / total_frames) * 100
+            # Ensure progress doesn't exceed 100%
+            progress = min((current_frame / total_frames) * 100, 100)
             sys.stdout.write(f"\rProgress: {progress:.2f}%")
             sys.stdout.flush()
 
