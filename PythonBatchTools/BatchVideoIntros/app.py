@@ -43,7 +43,7 @@ def convert_video(input_file, output_dir):
         "-profile:v", "high",
         "-preset", "medium",
         "-crf", "23",
-        "-vf", "format=yuv420p",
+        "-vf", "fps=30,format=yuv420p",  # Force 30 fps and ensure yuv420p format
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
@@ -59,8 +59,10 @@ def convert_video(input_file, output_dir):
         ffprobe_command = [
             "ffprobe",
             "-v", "error",
-            "-show_entries", "stream=codec_name,profile,level",
-            "-of", "default=noprint_wrappers=1",
+            "-select_streams", "v:0",
+            "-count_packets",
+            "-show_entries", "stream=r_frame_rate,avg_frame_rate",
+            "-of", "csv=p=0",
             input_file
         ]
         result = subprocess.run(ffprobe_command, capture_output=True, text=True)
@@ -74,7 +76,7 @@ def convert_video(input_file, output_dir):
         raise
     
     logger.info(f"Video conversion completed for: {input_file}")
-
+    
 
 def force_terminate_powerpoint():
     for proc in psutil.process_iter(["name"]):

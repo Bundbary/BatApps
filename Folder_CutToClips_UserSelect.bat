@@ -46,19 +46,36 @@ goto :eof
 :ProcessFolder
 setlocal
 set "folder=%~1"
+for %%I in ("!folder!") do set "folder_name=%%~nxI"
 
 REM Process each video file in the current folder
-for %%F in ("%folder%\*.mp4" "%folder%\*.avi" "%folder%\*.mov") do (
+for %%F in ("%folder%\DJI_*.mp4" "%folder%\DJI_*.MP4") do (
     set "input_file=%%F"
-    set "video_name=%%~nF"
-    echo Processing: !video_name!
+    set "original_name=%%~nF"
+    set "extension=%%~xF"
+    
+    REM Extract the unique identifier from the original filename
+    for /f "tokens=3,4 delims=_" %%a in ("!original_name!") do (
+        set "unique_id=%%a_%%b"
+    )
+    
+    REM Create the new filename
+    set "new_name=!folder_name!_!unique_id!!extension!"
+    set "new_file=!folder!\!new_name!"
+    
+    echo Renaming: !original_name!!extension! to !new_name!
+    ren "!input_file!" "!new_name!"
+    
+    REM Now process the renamed file
+    set "video_name=!folder_name!_!unique_id!"
+    echo Processing: !new_name!
 
     REM Create a subfolder for this video's clips, prepended with the video name
-    set "output_folder=%folder%\!video_name!_clips"
+    set "output_folder=!folder!\!video_name!_clips"
     if not exist "!output_folder!" mkdir "!output_folder!"
 
     REM Get video duration
-    for /f "tokens=*" %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "!input_file!"') do set duration=%%a
+    for /f "tokens=*" %%a in ('ffprobe -v error -show_entries format^=duration -of default^=noprint_wrappers^=1:nokey^=1 "!new_file!"') do set duration=%%a
     set /a duration_int=!duration!
 
     REM Cut video into user-specified duration clips
@@ -69,10 +86,10 @@ for %%F in ("%folder%\*.mp4" "%folder%\*.avi" "%folder%\*.mov") do (
         if !end! gtr !duration_int! set end=!duration_int!
         set "padded_count=00!clip_count!"
         set "output_file=!output_folder!\clip_!padded_count:~-3!.mp4"
-        ffmpeg -i "!input_file!" -ss !start! -t %clip_duration% -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -avoid_negative_ts make_zero -y "!output_file!"
+        ffmpeg -i "!new_file!" -ss !start! -t %clip_duration% -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -avoid_negative_ts make_zero -y "!output_file!"
         set /a clip_count+=1
     )
-    echo Finished processing !video_name!. Created !clip_count! clips in !output_folder!.
+    echo Finished processing !new_name!. Created !clip_count! clips in !output_folder!.
     echo.
 )
 
