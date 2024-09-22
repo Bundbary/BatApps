@@ -1,127 +1,92 @@
-import os
 import subprocess
-import sys
-import re
+import os
+import json
+import tempfile
 
 def get_video_duration(file_path):
-    """Get the duration of the video in seconds using ffprobe."""
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-         "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-    return float(result.stdout.strip())
-
-def get_video_frame_rate(file_path):
-    """Get the frame rate of the video using ffprobe."""
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-         "stream=r_frame_rate", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-    # The frame rate might come as a fraction like '30000/1001', so we need to evaluate it
-    frame_rate_str = result.stdout.strip()
-    try:
-        frame_rate = eval(frame_rate_str)
-    except Exception:
-        frame_rate = float(frame_rate_str)
-    return frame_rate
-
-def calculate_total_frames(duration, frame_rate):
-    """Calculate the total number of frames from duration and frame rate."""
-    return int(duration * frame_rate)
-
-def merge_videos(intro_file, main_file, output_file):
-    """Merge the intro and main video with a fade effect and show percentage progress."""
-    intro_duration = get_video_duration(intro_file)
-    main_duration = get_video_duration(main_file)
-    intro_framerate = get_video_frame_rate(intro_file)
-    main_framerate = get_video_frame_rate(main_file)
-
-    # Calculate total frames based on duration and frame rate
-    intro_frames = calculate_total_frames(intro_duration, intro_framerate)
-    main_frames = calculate_total_frames(main_duration, main_framerate)
-    total_frames = intro_frames + main_frames
-
-    fade_start = intro_duration - 1
-
-    filter_complex = (
-        f"[0:v]fps={intro_framerate},scale=1920:1080,"
-        f"fade=t=out:st={fade_start}:d=1[v0];"
-        f"[1:v]fps={main_framerate},fade=t=in:st=0:d=1[v1];"
-        f"[v0][0:a][v1][1:a]concat=n=2:v=1:a=1[outv][outa]"
-    )
-
-    command = [
-        "ffmpeg", "-y",
-        "-i", intro_file,
-        "-i", main_file,
-        "-filter_complex", filter_complex,
-        "-map", "[outv]",
-        "-map", "[outa]",
-        "-c:v", "libx264",
-        "-preset", "superfast",
-        "-crf", "23",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-movflags", "+faststart",
-        output_file
+    cmd = [
+        'ffprobe',
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_format',
+        '-show_streams',
+        file_path
     ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    data = json.loads(result.stdout)
+    return float(data['format']['duration'])
 
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+def merge_videos(input1, input2, output):
+    temp_dir = os.path.dirname(input1)
+    temp_file1 = os.path.join(temp_dir, "temp1.ts")
+    temp_file2 = os.path.join(temp_dir, "temp2.ts")
+    list_file = os.path.join(temp_dir, "temp_file_list.txt")
 
-    # Regular expression to match the frame number in the FFmpeg output
-    frame_regex = re.compile(r"frame=\s*(\d+)")
+    try:
+        # Convert to TS format
+        for input_file, temp_file in [(input1, temp_file1), (input2, temp_file2)]:
+            cmd = [
+                'ffmpeg',
+                '-i', input_file,
+                '-c', 'copy',
+                '-bsf:v', 'h264_mp4toannexb',
+                '-f', 'mpegts',
+                temp_file
+            ]
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-    for line in process.stdout:
-        sys.stdout.write(line)
-        sys.stdout.flush()
+        # Create list file
+        with open(list_file, "w") as f:
+            f.write(f"file '{os.path.basename(temp_file1)}'\n")
+            f.write(f"file '{os.path.basename(temp_file2)}'\n")
 
-        # Check if the current line contains frame information
-        match = frame_regex.search(line)
-        if match:
-            current_frame = int(match.group(1))
-            # Ensure progress doesn't exceed 100%
-            progress = min((current_frame / total_frames) * 100, 100)
-            sys.stdout.write(f"\rProgress: {progress:.2f}%")
-            sys.stdout.flush()
+        # Concatenate
+        cmd = [
+            'ffmpeg',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', list_file,
+            '-c', 'copy',
+            '-movflags', '+faststart',
+            '-y', output
+        ]
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=temp_dir)
+        print("FFmpeg output:")
+        print(result.stderr)
 
-    process.wait()
-
-    if process.returncode == 0:
-        print(f"\nMerged: {intro_file} and {main_file} into {output_file}")
-    else:
-        print(f"\nError merging: {intro_file} and {main_file}")
-
-def process_folder(folder_path):
-    """Recursively process the folders and merge videos."""
-    for root, dirs, files in os.walk(folder_path):
-        # Skip 'backup' folders
-        if 'backup' in root.lower():
-            print(f"Skipping backup folder: {root}")
-            continue
-
-        intro_file = os.path.join(root, "global_props.mp4")
-        main_file = os.path.join(root, "output.mp4")
-        output_file = os.path.join(root, "presentation.mp4")
-
-        if os.path.exists(intro_file) and os.path.exists(main_file):
-            merge_videos(intro_file, main_file, output_file)
-        else:
-            if not os.path.exists(intro_file):
-                print(f"Skipping folder, global_props.mp4 not found: {root}")
-            if not os.path.exists(main_file):
-                print(f"Skipping folder, output.mp4 not found: {root}")
+    except subprocess.CalledProcessError as e:
+        print(f"An error occurred: {e.stderr}")
+    finally:
+        # Clean up temporary files
+        for file in [temp_file1, temp_file2, list_file]:
+            if os.path.exists(file):
+                os.remove(file)
 
 if __name__ == "__main__":
-    input_folder = input("Enter the path to the root folder containing videos: ")
-    if not os.path.exists(input_folder):
-        print(f"The folder {input_folder} does not exist.")
-        sys.exit(1)
+    input1 = input("Enter the path of the first video file: ").strip()
+    input2 = input("Enter the path of the second video file: ").strip()
+    output = os.path.join(os.path.dirname(input1), 'merged_output.mp4')
 
-    process_folder(input_folder)
-    print("Video merging complete.")
+    try:
+        print("Checking input file durations...")
+        duration1 = get_video_duration(input1)
+        duration2 = get_video_duration(input2)
+        print(f"Duration of {input1}: {duration1:.2f} seconds")
+        print(f"Duration of {input2}: {duration2:.2f} seconds")
+        print(f"Total expected duration: {duration1 + duration2:.2f} seconds")
+
+        print("Merging videos...")
+        merge_videos(input1, input2, output)
+
+        print("Checking output file duration...")
+        output_duration = get_video_duration(output)
+        print(f"Duration of merged output: {output_duration:.2f} seconds")
+
+        if abs((duration1 + duration2) - output_duration) > 1:  # Allow 1 second tolerance
+            print("Warning: Output duration doesn't match the sum of input durations!")
+        else:
+            print("Output duration matches expected duration.")
+
+        print(f"Videos merged successfully. Output saved as: {output}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
