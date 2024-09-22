@@ -56,30 +56,36 @@ def merge_videos(input1, input2, output):
 
     except subprocess.CalledProcessError as e:
         print(f"An error occurred: {e.stderr}")
+        raise
     finally:
         # Clean up temporary files
         for file in [temp_file1, temp_file2, list_file]:
             if os.path.exists(file):
                 os.remove(file)
 
-if __name__ == "__main__":
-    input1 = input("Enter the path of the first video file: ").strip()
-    input2 = input("Enter the path of the second video file: ").strip()
-    output = os.path.join(os.path.dirname(input1), 'merged_output.mp4')
+def process_folder(folder_path):
+    global_props = os.path.join(folder_path, 'global_props.mp4')
+    output = os.path.join(folder_path, 'output.mp4')
+    presentation = os.path.join(folder_path, 'presentation.mp4')
+
+    if not os.path.exists(global_props) or not os.path.exists(output):
+        print(f"Error: Missing required files in {folder_path}")
+        return False
 
     try:
+        print(f"Processing folder: {folder_path}")
         print("Checking input file durations...")
-        duration1 = get_video_duration(input1)
-        duration2 = get_video_duration(input2)
-        print(f"Duration of {input1}: {duration1:.2f} seconds")
-        print(f"Duration of {input2}: {duration2:.2f} seconds")
+        duration1 = get_video_duration(global_props)
+        duration2 = get_video_duration(output)
+        print(f"Duration of global_props.mp4: {duration1:.2f} seconds")
+        print(f"Duration of output.mp4: {duration2:.2f} seconds")
         print(f"Total expected duration: {duration1 + duration2:.2f} seconds")
 
         print("Merging videos...")
-        merge_videos(input1, input2, output)
+        merge_videos(global_props, output, presentation)
 
         print("Checking output file duration...")
-        output_duration = get_video_duration(output)
+        output_duration = get_video_duration(presentation)
         print(f"Duration of merged output: {output_duration:.2f} seconds")
 
         if abs((duration1 + duration2) - output_duration) > 1:  # Allow 1 second tolerance
@@ -87,6 +93,34 @@ if __name__ == "__main__":
         else:
             print("Output duration matches expected duration.")
 
-        print(f"Videos merged successfully. Output saved as: {output}")
+        print(f"Videos merged successfully. Output saved as: {presentation}")
+        return True
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
+        return False
+
+def batch_process(root_folder):
+    success_count = 0
+    error_count = 0
+    total_folders = sum(1 for _, dirs, _ in os.walk(root_folder) if 'backup' not in dirs)
+    processed_folders = 0
+
+    for root, dirs, files in os.walk(root_folder):
+        dirs[:] = [d for d in dirs if 'backup' not in d.lower()]
+        
+        if 'global_props.mp4' in files and 'output.mp4' in files:
+            processed_folders += 1
+            print(f"\nProgress: {processed_folders}/{total_folders} folders")
+            if process_folder(root):
+                success_count += 1
+            else:
+                error_count += 1
+
+    print(f"\nBatch processing complete.")
+    print(f"Total folders processed: {processed_folders}")
+    print(f"Successful merges: {success_count}")
+    print(f"Errors encountered: {error_count}")
+
+if __name__ == "__main__":
+    root_folder = input("Enter the path to the root folder: ").strip()
+    batch_process(root_folder)
