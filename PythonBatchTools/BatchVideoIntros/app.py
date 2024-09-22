@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 def pixels_to_points(pixels):
     return pixels * 72 / 96  # Convert pixels to points
 
-
 def convert_video(input_file, output_dir):
     logger.info(f"Starting video conversion for: {input_file}")
     
@@ -35,7 +34,21 @@ def convert_video(input_file, output_dir):
     # Move original file to backup folder
     shutil.move(input_file, os.path.join(backup_dir, file_name))
     
-    # Convert video
+    # Get video duration
+    duration_command = [
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        os.path.join(backup_dir, file_name)
+    ]
+    duration_result = subprocess.run(duration_command, capture_output=True, text=True)
+    duration = float(duration_result.stdout.strip())
+    
+    # Calculate fade start time (1 second before the end)
+    fade_start = max(0, duration - 1)
+    
+    # Convert video with fade-out
     ffmpeg_command = [
         "ffmpeg",
         "-i", os.path.join(backup_dir, file_name),
@@ -43,7 +56,7 @@ def convert_video(input_file, output_dir):
         "-profile:v", "high",
         "-preset", "medium",
         "-crf", "23",
-        "-vf", "fps=30,format=yuv420p",  # Force 30 fps and ensure yuv420p format
+        "-vf", f"fps=30,format=yuv420p,fade=t=out:st={fade_start}:d=1",  # Add fade-out filter
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
@@ -53,7 +66,7 @@ def convert_video(input_file, output_dir):
     
     try:
         subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
-        logger.info(f"Successfully converted {file_name}")
+        logger.info(f"Successfully converted {file_name} with fade-out")
         
         # Verify the converted file
         ffprobe_command = [
@@ -75,8 +88,7 @@ def convert_video(input_file, output_dir):
         shutil.move(os.path.join(backup_dir, file_name), input_file)
         raise
     
-    logger.info(f"Video conversion completed for: {input_file}")
-    
+    logger.info(f"Video conversion completed for: {input_file}") 
 
 def force_terminate_powerpoint():
     for proc in psutil.process_iter(["name"]):
@@ -647,6 +659,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
     
     logger.info(f"Presentation creation and video export process completed for {base_name}")
     
+
 
 def process_folder(input_folder):
     logger.info(f"Starting batch processing for folder: {input_folder}")
