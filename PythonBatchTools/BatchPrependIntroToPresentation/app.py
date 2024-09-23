@@ -16,14 +16,17 @@ def get_video_duration(file_path):
     data = json.loads(result.stdout)
     return float(data['format']['duration'])
 
-def merge_videos(input1, input2, output):
+
+def merge_videos(input1, input2, output, fade_duration=2):
     temp_dir = os.path.dirname(input1)
     temp_file1 = os.path.join(temp_dir, "temp1.ts")
     temp_file2 = os.path.join(temp_dir, "temp2.ts")
+    last_frame_file = os.path.join(temp_dir, "last_frame.png")
+    fade_out_file = os.path.join(temp_dir, "fade_out.ts")
     list_file = os.path.join(temp_dir, "temp_file_list.txt")
 
     try:
-        # Convert to TS format
+        # Steps 1-2: Convert inputs to TS format (unchanged)
         for input_file, temp_file in [(input1, temp_file1), (input2, temp_file2)]:
             cmd = [
                 'ffmpeg',
@@ -35,12 +38,37 @@ def merge_videos(input1, input2, output):
             ]
             subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-        # Create list file
+        # Step 3: Extract last frame from input2
+        cmd = [
+            'ffmpeg',
+            '-i', input2,
+            '-vf', 'select=\'eq(n,0)\'',
+            '-vframes', '1',
+            last_frame_file
+        ]
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        # Step 4: Create fade-out clip
+        cmd = [
+            'ffmpeg',
+            '-loop', '1',
+            '-i', last_frame_file,
+            '-t', str(fade_duration),
+            '-vf', f'fade=t=out:st=0:d={fade_duration}',
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-f', 'mpegts',
+            fade_out_file
+        ]
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        # Step 5: Create list file (modified to include fade-out clip)
         with open(list_file, "w") as f:
             f.write(f"file '{os.path.basename(temp_file1)}'\n")
             f.write(f"file '{os.path.basename(temp_file2)}'\n")
+            f.write(f"file '{os.path.basename(fade_out_file)}'\n")
 
-        # Concatenate
+        # Step 6: Concatenate (unchanged)
         cmd = [
             'ffmpeg',
             '-f', 'concat',
@@ -59,7 +87,7 @@ def merge_videos(input1, input2, output):
         raise
     finally:
         # Clean up temporary files
-        for file in [temp_file1, temp_file2, list_file]:
+        for file in [temp_file1, temp_file2, last_frame_file, fade_out_file, list_file]:
             if os.path.exists(file):
                 os.remove(file)
 
@@ -82,8 +110,7 @@ def process_folder(folder_path):
         print(f"Total expected duration: {duration1 + duration2:.2f} seconds")
 
         print("Merging videos...")
-        merge_videos(global_props, output, presentation)
-
+        merge_videos(global_props, output, presentation, fade_duration=2)
         print("Checking output file duration...")
         output_duration = get_video_duration(presentation)
         print(f"Duration of merged output: {output_duration:.2f} seconds")
