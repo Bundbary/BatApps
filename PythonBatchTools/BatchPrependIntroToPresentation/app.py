@@ -17,16 +17,34 @@ def get_video_duration(file_path):
     return float(data['format']['duration'])
 
 
-def merge_videos(input1, input2, output, fade_duration=2):
+
+def merge_videos(input1, input2, output, fade_in_duration=1, fade_out_duration=2):
     temp_dir = os.path.dirname(input1)
     temp_file1 = os.path.join(temp_dir, "temp1.ts")
     temp_file2 = os.path.join(temp_dir, "temp2.ts")
-    last_frame_file = os.path.join(temp_dir, "last_frame.png")
+    fade_in_file = os.path.join(temp_dir, "fade_in.ts")
+    last_frame_file = os.path.join(temp_dir, "last_frame.mp4")
     fade_out_file = os.path.join(temp_dir, "fade_out.ts")
     list_file = os.path.join(temp_dir, "temp_file_list.txt")
 
     try:
-        # Steps 1-2: Convert inputs to TS format (unchanged)
+        # Step 1: Create fade-in clip with silent audio
+        cmd = [
+            'ffmpeg',
+            '-f', 'lavfi',
+            '-i', f'color=c=black:s=1920x1080:d={fade_in_duration}',
+            '-f', 'lavfi',
+            '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:d={fade_in_duration}',
+            '-vf', f'fade=t=out:st=0:d={fade_in_duration},format=yuv420p',
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-shortest',
+            '-f', 'mpegts',
+            fade_in_file
+        ]
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        # Step 2: Convert inputs to TS format (unchanged)
         for input_file, temp_file in [(input1, temp_file1), (input2, temp_file2)]:
             cmd = [
                 'ffmpeg',
@@ -38,43 +56,48 @@ def merge_videos(input1, input2, output, fade_duration=2):
             ]
             subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-        # Step 3: Extract last frame from input2
+        # Step 3: Extract last frame from input2 (with audio)
         cmd = [
             'ffmpeg',
             '-i', input2,
             '-vf', 'select=\'eq(n,0)\'',
             '-vframes', '1',
+            '-af', 'atrim=0:0.1',
             last_frame_file
         ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-        # Step 4: Create fade-out clip
+        # Step 4: Create fade-out clip (with audio)
         cmd = [
             'ffmpeg',
-            '-loop', '1',
+            '-stream_loop', '-1',
             '-i', last_frame_file,
-            '-t', str(fade_duration),
-            '-vf', f'fade=t=out:st=0:d={fade_duration}',
+            '-t', str(fade_out_duration),
+            '-vf', f'fade=t=out:st=0:d={fade_out_duration}',
+            '-af', f'afade=t=out:st=0:d={fade_out_duration}',
             '-c:v', 'libx264',
+            '-c:a', 'aac',
             '-pix_fmt', 'yuv420p',
             '-f', 'mpegts',
             fade_out_file
         ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-        # Step 5: Create list file (modified to include fade-out clip)
+        # Step 5: Create list file (unchanged)
         with open(list_file, "w") as f:
+            f.write(f"file '{os.path.basename(fade_in_file)}'\n")
             f.write(f"file '{os.path.basename(temp_file1)}'\n")
             f.write(f"file '{os.path.basename(temp_file2)}'\n")
             f.write(f"file '{os.path.basename(fade_out_file)}'\n")
 
-        # Step 6: Concatenate (unchanged)
+        # Step 6: Concatenate (modified to ensure audio is copied)
         cmd = [
             'ffmpeg',
             '-f', 'concat',
             '-safe', '0',
             '-i', list_file,
-            '-c', 'copy',
+            '-c:v', 'copy',
+            '-c:a', 'aac',
             '-movflags', '+faststart',
             '-y', output
         ]
@@ -87,10 +110,10 @@ def merge_videos(input1, input2, output, fade_duration=2):
         raise
     finally:
         # Clean up temporary files
-        for file in [temp_file1, temp_file2, last_frame_file, fade_out_file, list_file]:
+        for file in [temp_file1, temp_file2, fade_in_file, last_frame_file, fade_out_file, list_file]:
             if os.path.exists(file):
                 os.remove(file)
-
+                
 def process_folder(folder_path):
     global_props = os.path.join(folder_path, 'global_props.mp4')
     output = os.path.join(folder_path, 'output.mp4')
@@ -110,7 +133,7 @@ def process_folder(folder_path):
         print(f"Total expected duration: {duration1 + duration2:.2f} seconds")
 
         print("Merging videos...")
-        merge_videos(global_props, output, presentation, fade_duration=2)
+        merge_videos(global_props, output, presentation, fade_in_duration=1, fade_out_duration=2)
         print("Checking output file duration...")
         output_duration = get_video_duration(presentation)
         print(f"Duration of merged output: {output_duration:.2f} seconds")
