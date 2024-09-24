@@ -8,7 +8,8 @@ import os
 site_url = "https://sdiclarity.sharepoint.com/sites/ReckittEclipse-TrainingVideos"
 # folder_url = "/sites/ReckittEclipse-TrainingVideos/Shared Documents/Training Videos/Training Video Footage/Jeremy Narrated Primary/August 9 Narrated/raw"
 
-folder_url = "/sites/ReckittEclipse-TrainingVideos/Shared Documents/Training Videos/Training Video Footage/Secondary Packaging"
+folder_url = "/sites/ReckittEclipse-TrainingVideos/Shared Documents/Training Videos/Training Video Footage/Filler Room"
+# folder_url = "/sites/ReckittEclipse-TrainingVideos/Shared Documents/Training Videos/Training Video Footage/Secondary Packaging"
 
 
 
