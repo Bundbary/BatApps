@@ -838,14 +838,13 @@ def prepend_intro_timestamp(video_info_path):
     if 'transcript' not in video_info:
         video_info['transcript'] = []
 
-    # Combine title and subtitle
-    combined_text = f"{video_info['title']}. {video_info['subtitle']}"
+    # Combine collection title, title, and subtitle
+    combined_text = f"{video_info['collection_title']}. {video_info['title']}. {video_info['subtitle']}"
 
     # Create new transcript item (without timestamp)
     new_transcript_item = {
         "text": combined_text
     }
-
     # Append the new item to the transcript array
     video_info['transcript'].append(new_transcript_item)
 
