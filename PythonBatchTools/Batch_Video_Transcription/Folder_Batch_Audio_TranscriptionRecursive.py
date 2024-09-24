@@ -6,7 +6,8 @@ from openai import OpenAI
 
 # Initialize the OpenAI client with an API key
 # Note: It's generally not recommended to hardcode API keys in scripts
-client = OpenAI(api_key="sk--g2hiAUedCQ72Qk3DiAxxvKxkOEltseJThkuGGWCnCT3BlbkFJEoOjLUoOD1CCWxNlRMxF3-81c4FruygP7WruHdBocA")
+client = OpenAI(api_key="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")
+# 
 
 def transcribe_audio(audio_path):
     """
