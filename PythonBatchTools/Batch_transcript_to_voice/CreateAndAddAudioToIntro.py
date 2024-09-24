@@ -94,7 +94,7 @@ def generate_audio_from_transcript(transcript: str, api_key: str, output_file: s
 
     payload = {
         "Engine": "neural",
-        "VoiceId": "ai3-Jony",
+        "VoiceId": "pro1-Thomas",
         "LanguageCode": "en-US",
         "Text": sanitized_text,
         "OutputFormat": "mp3",
@@ -102,7 +102,8 @@ def generate_audio_from_transcript(transcript: str, api_key: str, output_file: s
         "Effect": "default",
         "MasterVolume": "0",
         "MasterSpeed": "0",
-        "MasterPitch": "0"
+        "MasterPitch": "0",
+        "FileStore": "24"
     }
 
     try:
