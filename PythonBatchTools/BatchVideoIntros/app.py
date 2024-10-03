@@ -715,7 +715,7 @@ def create_presentation(video_info, layout_settings_path, output_dir, base_folde
     
     logger.info(f"Presentation creation and video export process completed for {project_name}")
 
-    
+
 
 def process_folder(input_folder, layout_settings_path):
     logger.info(f"Starting batch processing for folder: {input_folder}")
@@ -936,19 +936,68 @@ def process_urls(base_folder_url, layout_settings_path):
         logger.error(f"Failed to parse JSON from {global_props_url}")
 
     logger.info("Processing completed")
+import sys
 
-
+def get_upload_url(download_url):
+    if download_url.startswith("http://localbrowse"):
+        return "http://localbrowse/Users/bpenn/ExpectancyLearning/flask_apps/_util_scripts/video_intro_upload.php"
+    elif download_url.startswith("https://chameleon.sdiclarity.com/"):
+        return "https://chameleon.sdiclarity.com/flask_apps/_util_scripts/video_intro_upload.php"
+    else:
+        logger.error(f"Unknown download URL: {download_url}")
+        raise ValueError(f"Unknown download URL: {download_url}")
+    
+def upload_file(file_path, upload_url, relative_dir, app_folder):
+    with open(file_path, 'rb') as file:
+        files = {'file': file}
+        data = {'directory': relative_dir, 'app_folder': app_folder}
+        try:
+            response = requests.post(upload_url, files=files, data=data)
+            response.raise_for_status()
+            logger.info(f"Successfully uploaded {file_path}")
+            return response
+        except requests.RequestException as e:
+            logger.error(f"Failed to upload {file_path}: {str(e)}")
+            return None
+     
+     
 def process_single_url(video_info, base_folder_url, layout_settings_path):
     logger.info(f"Processing data from: {base_folder_url}")
     try:
-        logger.info(
-            f"Successfully fetched JSON data. Keys present: {', '.join(video_info.keys())}"
-        )
+        logger.info(f"Successfully fetched JSON data. Keys present: {', '.join(video_info.keys())}")
 
         output_dir = os.getcwd()  # or specify a different output directory
-        create_presentation(
-            video_info, layout_settings_path, output_dir, base_folder_url
-        )
+        create_presentation(video_info, layout_settings_path, output_dir, base_folder_url)
+
+        # Get upload URL based on the download URL
+        try:
+            upload_url = get_upload_url(base_folder_url)
+        except ValueError as e:
+            logger.error(f"Critical error: {str(e)}")
+            sys.exit(1)  # Exit the script with an error code
+
+        # Extract relative directory and app folder from base_folder_url
+        url_parts = base_folder_url.split('/')
+        app_folder_index = url_parts.index('flask_apps') + 1
+        app_folder = url_parts[app_folder_index]
+        relative_dir = '/'.join(url_parts[app_folder_index + 1:])  # This now includes 'static'
+
+        # Upload created files
+        project_name = os.path.basename(base_folder_url.rstrip("/"))
+        files_to_upload = [
+            f"{project_name}.pptx",
+            f"{project_name}.mp4",
+            f"{project_name}.json",
+            "global_props.json"
+        ]
+
+        for filename in files_to_upload:
+            file_path = os.path.join(output_dir, "remote_projects", project_name, filename)
+            if os.path.exists(file_path):
+                upload_file(file_path, upload_url, relative_dir, app_folder)
+            else:
+                logger.warning(f"File not found for upload: {file_path}")
+
     except Exception as e:
         logger.error(f"Failed to process data from {base_folder_url}: {str(e)}")
         logger.error(traceback.format_exc())
@@ -1004,7 +1053,21 @@ if __name__ == "__main__":
             "Please enter the URL of the JSON file (either a single global_props.json or a list of URLs):"
         )
         url_list_json = input().strip()
-        process_urls(url_list_json, layout_settings_path)
+
+
+        try:
+            process_urls(url_list_json, layout_settings_path)
+        except SystemExit:
+            logger.info("Script exited due to a critical error. Check the log for details.")
+            print("Script exited due to a critical error. Check the log for details.")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {str(e)}")
+            logger.error(traceback.format_exc())
+            print("An unexpected error occurred. Check the log for details.")
+
+
+
+
     else:
         print(
             "Invalid mode selected. Please run the script again and choose 'local' or 'remote'."
