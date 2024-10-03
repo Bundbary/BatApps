@@ -22,18 +22,11 @@ logger = logging.getLogger(__name__)
 def pixels_to_points(pixels):
     return pixels * 72 / 96  # Convert pixels to points
 
+
 def convert_video(input_file, output_dir):
     logger.info(f"Starting video conversion for: {input_file}")
     
-    input_dir = os.path.dirname(input_file)
     file_name = os.path.basename(input_file)
-    backup_dir = os.path.join(input_dir, "_backup")
-    
-    # Create backup folder if it doesn't exist
-    os.makedirs(backup_dir, exist_ok=True)
-    
-    # Move original file to backup folder
-    shutil.move(input_file, os.path.join(backup_dir, file_name))
     
     # Get video duration
     duration_command = [
@@ -41,7 +34,7 @@ def convert_video(input_file, output_dir):
         "-v", "error",
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
-        os.path.join(backup_dir, file_name)
+        input_file
     ]
     duration_result = subprocess.run(duration_command, capture_output=True, text=True)
     duration = float(duration_result.stdout.strip())
@@ -49,10 +42,13 @@ def convert_video(input_file, output_dir):
     # Calculate fade start time (1 second before the end)
     fade_start = max(0, duration - 1)
     
+    # Prepare output file path
+    output_file = os.path.join(output_dir, f"converted_{file_name}")
+    
     # Convert video with fade-out
     ffmpeg_command = [
         "ffmpeg",
-        "-i", os.path.join(backup_dir, file_name),
+        "-i", input_file,
         "-c:v", "libx264",
         "-profile:v", "high",
         "-preset", "medium",
@@ -61,7 +57,7 @@ def convert_video(input_file, output_dir):
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
-        input_file,
+        output_file,
         "-y"
     ]
     
@@ -77,19 +73,25 @@ def convert_video(input_file, output_dir):
             "-count_packets",
             "-show_entries", "stream=r_frame_rate,avg_frame_rate",
             "-of", "csv=p=0",
-            input_file
+            output_file
         ]
         result = subprocess.run(ffprobe_command, capture_output=True, text=True)
         logger.info(f"Converted file details:\n{result.stdout}")
         
+        # If everything is successful, replace the original file with the converted one
+        os.replace(output_file, input_file)
+        logger.info(f"Replaced original file with converted file: {input_file}")
+        
     except subprocess.CalledProcessError as e:
         logger.error(f"Error converting {file_name}: {e}")
         logger.error(f"FFmpeg error output: {e.stderr}")
-        # Restore original file
-        shutil.move(os.path.join(backup_dir, file_name), input_file)
+        # Clean up the output file if it was created
+        if os.path.exists(output_file):
+            os.remove(output_file)
         raise
     
-    logger.info(f"Video conversion completed for: {input_file}") 
+    logger.info(f"Video conversion completed for: {input_file}")
+
 
 def force_terminate_powerpoint():
     for proc in psutil.process_iter(["name"]):
@@ -367,281 +369,306 @@ def build_timestamp_with_dots(slide, text, time_str, max_width, font_name, font_
     return formatted_text
 
 
+def setup_project_directory(output_dir, base_folder_url):
+    project_name = os.path.basename(base_folder_url.rstrip("/"))
+    remote_projects_dir = os.path.join(output_dir, "remote_projects")
+    project_dir = os.path.join(remote_projects_dir, project_name)
+    os.makedirs(project_dir, exist_ok=True)
+    return project_name, project_dir
+
+
+def initialize_powerpoint(layout_settings):
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    powerpoint.Visible = True
+    presentation = powerpoint.Presentations.Add()
+    slide_width = pixels_to_points(layout_settings["video"]["width"])
+    slide_height = pixels_to_points(layout_settings["video"]["height"])
+    presentation.PageSetup.SlideWidth = slide_width
+    presentation.PageSetup.SlideHeight = slide_height
+    return powerpoint, presentation, slide_width, slide_height
+
+
+def create_slide(presentation):
+    return presentation.Slides.Add(1, 12)  # 12 is ppLayoutBlank
+
+
+def add_background_image(
+    slide, image_url, image_filename, project_dir, slide_width, slide_height
+):
+    image_path = download_file(image_url, image_filename, project_dir)
+    if image_path:
+        try:
+            background_image = slide.Shapes.AddPicture(
+                FileName=image_path,
+                LinkToFile=False,
+                SaveWithDocument=True,
+                Left=0,
+                Top=0,
+                Width=slide_width,
+                Height=slide_height,
+            )
+            background_image.ZOrder(3)  # Send to back
+            logger.info(
+                f"Added full-size intro image as shape successfully: {image_path}"
+            )
+        except Exception as e:
+            logger.error(f"Error adding full-size intro image as shape: {str(e)}")
+    else:
+        logger.warning(f"Failed to download intro image from: {image_url}")
+
+
+def add_text_overlay(slide, text_area_width, slide_height):
+    text_area = slide.Shapes.AddShape(1, 0, 0, text_area_width, slide_height)
+    text_area.Fill.ForeColor.RGB = 0xFFFFFF  # White color
+    text_area.Line.Visible = False
+    text_area.Name = "TextArea"
+    return text_area
+
+
+def add_collection_title(slide, video_info, margin, content_width, layout_settings):
+    collection_title_height = pixels_to_points(40)
+    collection_title = add_textbox_with_dynamic_font(
+        slide,
+        video_info["collection_title"],
+        margin,
+        margin,
+        content_width,
+        collection_title_height,
+        layout_settings["collection_title"],
+    )
+    if collection_title is not None:
+        collection_title.Name = "CollectionTitle"
+        return collection_title, collection_title_height + pixels_to_points(20)
+    else:
+        logger.error("Error: Failed to create collection title")
+        return None, 0
+
+
+def add_main_title(
+    slide, video_info, margin, current_top, content_width, layout_settings
+):
+    title_height = pixels_to_points(240)
+    title_settings = layout_settings["title"].copy()
+    title_settings["dynamic_sizing"] = True
+    title_settings["min_font_size"] = 43
+    title_settings["max_font_size"] = 100
+    title_box = add_textbox_with_dynamic_font(
+        slide,
+        video_info["title"],
+        margin,
+        current_top,
+        content_width,
+        title_height,
+        title_settings,
+    )
+    if title_box is not None:
+        title_box.Name = "TitleBox"
+        return title_box, title_height + pixels_to_points(20)
+    else:
+        logger.error("Error: Failed to create title box")
+        return None, 0
+
+
+def add_subtitle(
+    slide, video_info, margin, current_top, content_width, layout_settings
+):
+    subtitle_height = pixels_to_points(80)
+    subtitle_box = add_textbox_with_dynamic_font(
+        slide,
+        video_info["subtitle"],
+        margin,
+        current_top,
+        content_width,
+        subtitle_height,
+        layout_settings["subtitle"],
+    )
+    if subtitle_box is not None:
+        subtitle_box.Name = "SubtitleBox"
+        subtitle_box.TextFrame.AutoSize = 1  # ppAutoSizeShapeToFitText
+        actual_text_height = subtitle_box.TextFrame.TextRange.BoundHeight
+        subtitle_box.Height = actual_text_height
+        return subtitle_box, subtitle_box.Top + actual_text_height
+    else:
+        logger.error("Error: Failed to create subtitle box")
+        return None, current_top + subtitle_height
+
+
+def add_bullet_points(
+    slide, video_info, margin, current_top, content_width, layout_settings
+):
+    bullet_shapes = []
+    if "bullets" in video_info:
+        bullet_settings = layout_settings["bullets"]
+        bullet_spacing = pixels_to_points(bullet_settings.get("spacing", 10))
+
+        for i, bullet_text in enumerate(video_info["bullets"]):
+            bullet_box = add_bullet_point(
+                slide,
+                bullet_text,
+                margin,
+                current_top,
+                content_width,
+                pixels_to_points(30),
+                bullet_settings,
+            )
+            if bullet_box is not None:
+                bullet_box.Name = f"BulletPoint{i+1}"
+                bullet_box.TextFrame.AutoSize = 1  # ppAutoSizeShapeToFitText
+                bullet_shapes.append(bullet_box)
+                current_top += bullet_box.Height + bullet_spacing
+            else:
+                logger.error(f"Error: Failed to create bullet point {i+1}")
+
+        current_top += bullet_spacing  # Extra space after last bullet
+
+    return bullet_shapes, current_top
+
+
+def add_timestamps(
+    slide, video_info, margin, current_top, content_width, layout_settings
+):
+    timestamp_shapes = []
+    timestamp_height = pixels_to_points(30)
+    timestamp_spacing = pixels_to_points(
+        layout_settings["timestamps"].get("spacing", 10)
+    )
+
+    for i, timestamp in enumerate(video_info["timestamps"]):
+        formatted_text = build_timestamp_with_dots(
+            slide,
+            timestamp["text"],
+            timestamp["time"],
+            content_width,
+            layout_settings["timestamps"]["font_name"],
+            layout_settings["timestamps"]["font_size"],
+        )
+        ts_box = add_textbox_with_dynamic_font(
+            slide,
+            formatted_text,
+            margin,
+            current_top,
+            content_width,
+            timestamp_height,
+            layout_settings["timestamps"],
+            disable_word_wrap=True,
+            justify=True,
+        )
+        if ts_box is not None:
+            ts_box.Name = f"Timestamp{i+1}"
+            timestamp_shapes.append(ts_box)
+            current_top += ts_box.Height + timestamp_spacing
+        else:
+            logger.error(f"Error: Failed to create timestamp box {i+1}")
+
+    return timestamp_shapes, current_top
+
+
+def finalize_presentation(
+    presentation,
+    shapes,
+    output_pptx_path,
+    output_video_path,
+    layout_settings,
+    project_dir,
+):
+    apply_animations(
+        presentation.Slides(1), shapes, layout_settings.get("animations", {})
+    )
+
+    logger.info("Saving presentation")
+    start_time = time.time()
+    presentation.SaveAs(os.path.abspath(output_pptx_path))
+    logger.info(f"Presentation saved in {time.time() - start_time:.2f} seconds")
+
+    logger.info("Exporting presentation to video")
+    export_to_video(presentation, output_video_path, layout_settings)
+
+    logger.info("Force terminating PowerPoint")
+    force_terminate_powerpoint()
+
+    logger.info("Starting video conversion")
+    convert_video(output_video_path, project_dir)
+
+
+
 def create_presentation(video_info, layout_settings_path, output_dir, base_folder_url):
     try:
-        # Use the last part of the URL as the base name
-        base_name = os.path.basename(base_folder_url.rstrip('/'))
-        logger.info(f"Starting presentation creation for {base_name}")
+        project_name, project_dir = setup_project_directory(output_dir, base_folder_url)
+        logger.info(f"Starting presentation creation for {project_name}")
         
-        # Prepend intro timestamp and adjust other timestamps
+        # Modify video_info (add timestamps, etc.) before splitting
         video_info = prepend_intro_timestamp(video_info)
-
+        
+        # Explicitly create global_props and video_specific_info
+        global_props = video_info.copy()
+        video_specific_info = {
+            'duration': global_props.pop('duration', ''),
+            'transcript': global_props.pop('transcript', []),
+            'label': 'intro'  # Add the new 'label' field
+        }
+        
+        logger.info(f"Initial global_props keys: {global_props.keys()}")
+        logger.info(f"Initial video_specific_info keys: {video_specific_info.keys()}")
+        
         with open(layout_settings_path, "r") as file:
             layout_settings = json.load(file)
-
-        bullet_spacing = pixels_to_points(layout_settings["bullets"].get("spacing", 10))
         
-        # Ensure output_dir is an absolute path
-        output_dir = os.path.abspath(output_dir)
-
-        # Generate output file names based on input JSON file name
-        output_pptx_path = os.path.join(output_dir, f"{base_name}.pptx")
-        output_video_path = os.path.join(output_dir, f"{base_name}.mp4")
-
+        output_pptx_path = os.path.join(project_dir, f"{project_name}.pptx")
+        output_video_path = os.path.join(project_dir, f"{project_name}.mp4")
+        
+        # Update the 'order' array in global_props
+        if 'order' in global_props:
+            mp4_filename = f"{project_name}.mp4"
+            global_props['order'] = [mp4_filename if item == 'global_props.mp4' else item for item in global_props['order']]
+        else:
+            logger.warning("No 'order' array found in global_props")
+        
         powerpoint = None
         presentation = None
         try:
-            start_time = time.time()
-            powerpoint = win32com.client.Dispatch("PowerPoint.Application")
-            powerpoint.Visible = True  # Keep PowerPoint visible
-            logger.info(f"PowerPoint started in {time.time() - start_time:.2f} seconds")
-
-            start_time = time.time()
-            presentation = powerpoint.Presentations.Add()
-
-            # Set slide size
-            slide_width = pixels_to_points(layout_settings["video"]["width"])
-            slide_height = pixels_to_points(layout_settings["video"]["height"])
-            presentation.PageSetup.SlideWidth = slide_width
-            presentation.PageSetup.SlideHeight = slide_height
-
-            slide = presentation.Slides.Add(1, 12)  # 12 is ppLayoutBlank
-            logger.info(f"Presentation and slide created in {time.time() - start_time:.2f} seconds")
-
-            shapes = []
-
-            # Layout settings
+            powerpoint, presentation, slide_width, slide_height = initialize_powerpoint(layout_settings)
+            slide = create_slide(presentation)
+            
             margin = pixels_to_points(layout_settings["slide"]["margin"])
-            text_area_width_percentage = 40  # Fixed at 40% as per your requirement
-            text_area_width = slide_width * (text_area_width_percentage / 100)
+            text_area_width = slide_width * 0.4
             content_width = text_area_width - margin * 2
-
-            logger.info("Adding main content elements")
-
-            # Fetch and add the intro image from URL
-
+            
             image_url = f"{base_folder_url}/intro_image.jpg"
-            image_filename = 'intro_image.jpg'
-            image_path = download_file(image_url, image_filename)
-            if image_path:
-                try:
-                    background_image = slide.Shapes.AddPicture(
-                        FileName=image_path,
-                        LinkToFile=False,
-                        SaveWithDocument=True,
-                        Left=0,
-                        Top=0,
-                        Width=slide_width,
-                        Height=slide_height
-                    )
-                    background_image.ZOrder(3)  # Send to back
-                    logger.info(f"Added full-size intro image as shape successfully: {image_path}")
-                except Exception as e:
-                    logger.error(f"Error adding full-size intro image as shape: {str(e)}")
-            else:
-                logger.warning(f"Failed to download intro image from: {image_url}")
-            # Add text area overlay
-            text_area = slide.Shapes.AddShape(1, 0, 0, text_area_width, slide_height)
-            text_area.Fill.ForeColor.RGB = 0xFFFFFF  # White color
-            text_area.Line.Visible = False
-            text_area.Name = "TextArea"
-            shapes.append(text_area)
-            logger.info(f"Added text area overlay with width: {text_area_width} and transparency: 50%")
-
+            add_background_image(slide, image_url, 'intro_image.jpg', project_dir, slide_width, slide_height)
+            
+            text_area = add_text_overlay(slide, text_area_width, slide_height)
+            shapes = [text_area]
+            
             current_top = margin
-
-            # Add VIDEO COLLECTION TITLE
-            logger.info("Adding collection title")
-            collection_title_height = pixels_to_points(40)
-            collection_title = add_textbox_with_dynamic_font(
-                slide,
-                video_info["collection_title"],
-                margin,
-                current_top,
-                content_width,
-                collection_title_height,
-                layout_settings["collection_title"],
-            )
-            if collection_title is not None:
-                collection_title.Name = "CollectionTitle"
+            
+            collection_title, height = add_collection_title(slide, global_props, margin, content_width, layout_settings)
+            if collection_title:
                 shapes.append(collection_title)
-                current_top += collection_title_height + pixels_to_points(20)
-                logger.info("Collection title added successfully")
-            else:
-                logger.error("Error: Failed to create collection title")
-
-            # Add title with dynamic sizing
-            logger.info("Adding main title")
-            title_height = pixels_to_points(240)  # Increased height for title
-            title_settings = layout_settings["title"].copy()
-            title_settings["dynamic_sizing"] = True
-            title_settings["min_font_size"] = 43
-            title_settings["max_font_size"] = 100
-
-            title_box = add_textbox_with_dynamic_font(
-                slide,
-                video_info["title"],
-                margin,
-                current_top,
-                content_width,
-                title_height,
-                title_settings,
-            )
-            if title_box is not None:
-                title_box.Name = "TitleBox"
+                current_top += height
+            
+            title_box, height = add_main_title(slide, global_props, margin, current_top, content_width, layout_settings)
+            if title_box:
                 shapes.append(title_box)
-                current_top += title_height + pixels_to_points(20)
-                logger.info("Main title added successfully")
-            else:
-                logger.error("Error: Failed to create title box")
-
-            # Add subtitle
-            logger.info("Adding subtitle")
-            subtitle_height = pixels_to_points(80)  # Initial height, may be adjusted
-            subtitle_box = add_textbox_with_dynamic_font(
-                slide,
-                video_info["subtitle"],
-                margin,
-                current_top,
-                content_width,
-                subtitle_height,
-                layout_settings["subtitle"],
-            )
-            if subtitle_box is not None:
-                subtitle_box.Name = "SubtitleBox"
+                current_top += height
+            
+            subtitle_box, subtitle_bottom = add_subtitle(slide, global_props, margin, current_top, content_width, layout_settings)
+            if subtitle_box:
                 shapes.append(subtitle_box)
-
-                # Force the text frame to auto-fit the text
-                subtitle_box.TextFrame.AutoSize = 1  # ppAutoSizeShapeToFitText
-
-                # Get the actual height of the text content
-                actual_text_height = subtitle_box.TextFrame.TextRange.BoundHeight
-
-                # Adjust the shape height to match the text height
-                subtitle_box.Height = actual_text_height
-
-                # Calculate the bottom of the subtitle box
-                subtitle_bottom = subtitle_box.Top + actual_text_height
-                logger.info(f"Subtitle added successfully. Bottom position: {subtitle_bottom}")
-            else:
-                logger.error("Error: Failed to create subtitle box")
-                subtitle_bottom = current_top + subtitle_height  # Fallback if subtitle creation fails
-
-            # Add bullet points
-            if "bullets" in video_info:
-                logger.info("Adding bullet points")
-                bullet_settings = layout_settings["bullets"]
-                default_spacing = 10  # You can adjust this default value
-                logger.info(f"Bullet spacing used: {bullet_spacing}")
-
-                current_top = subtitle_bottom + bullet_spacing + 20  # Start bullets below subtitle
-
-                for i, bullet_text in enumerate(video_info["bullets"]):
-                    bullet_box = add_bullet_point(
-                        slide,
-                        bullet_text,
-                        margin,
-                        current_top,
-                        content_width,
-                        pixels_to_points(30),  # Initial height, will be adjusted
-                        bullet_settings,
-                    )
-                    if bullet_box is not None:
-                        bullet_box.Name = f"BulletPoint{i+1}"
-                        shapes.append(bullet_box)
-
-                        # Force the text frame to auto-fit the text
-                        bullet_box.TextFrame.AutoSize = 1  # ppAutoSizeShapeToFitText
-
-                        # Get the actual height of the bullet point
-                        actual_bullet_height = bullet_box.Height
-
-                        logger.info(f"Added bullet point {i+1} successfully at position {current_top}")
-                        logger.info(f"Bullet point {i+1} actual height: {actual_bullet_height}")
-
-                        # Update current_top for the next bullet
-                        current_top += actual_bullet_height + bullet_spacing
-                    else:
-                        logger.error(f"Error: Failed to create bullet point {i+1}")
-
-                # Add extra space after the last bullet
-                current_top += bullet_spacing
-
-            logger.info(f"Bullet spacing used: {bullet_spacing}")
-
-            # Add some padding below the subtitle
-            timestamp_start = subtitle_bottom + pixels_to_points(20)  # 20 points of padding
-
-            # Add timestamps
-            logger.info(f"Starting to add {len(video_info['timestamps'])} timestamps")
-            timestamp_height = pixels_to_points(30)
-            timestamp_spacing = pixels_to_points(layout_settings["timestamps"].get("spacing", 10))
-
-            # Add some extra spacing between bullets and timestamps
-            current_top += pixels_to_points(20)  # You can adjust this value as needed
-
-            for i, timestamp in enumerate(video_info['timestamps']):
-                logger.info(f"Processing timestamp {i+1}: {timestamp['text']}")
-                formatted_text = build_timestamp_with_dots(
-                    slide,
-                    timestamp["text"],
-                    timestamp["time"],
-                    content_width,
-                    layout_settings["timestamps"]["font_name"],
-                    layout_settings["timestamps"]["font_size"],
-                )
-                logger.info(f"Formatted timestamp {i+1}: {formatted_text}")
-                ts_box = add_textbox_with_dynamic_font(
-                    slide,
-                    formatted_text,
-                    margin,
-                    current_top,
-                    content_width,
-                    timestamp_height,
-                    layout_settings["timestamps"],
-                    disable_word_wrap=True,
-                    justify=True,
-                )
-                if ts_box is not None:
-                    ts_box.Name = f"Timestamp{i+1}"
-                    shapes.append(ts_box)
-                    logger.info(f"Added timestamp {i+1} successfully at position {current_top}")
-                    current_top += ts_box.Height + timestamp_spacing
-                else:
-                    logger.error(f"Error: Failed to create timestamp box {i+1}")
-
-            logger.info("Finished adding timestamps")
-
-            # Apply animations
-            logger.info("Applying animations")
-            apply_animations(slide, shapes, layout_settings.get("animations", {}))
-
-            logger.info("Saving presentation")
-            start_time = time.time()
-            presentation.SaveAs(os.path.abspath(output_pptx_path))
-            logger.info(f"Presentation saved in {time.time() - start_time:.2f} seconds")
-
-            # Export to video
-            logger.info("Exporting presentation to video")
-            export_to_video(presentation, output_video_path, layout_settings)
-
-            # Force terminate PowerPoint immediately after video export
-            logger.info("Force terminating PowerPoint")
-            force_terminate_powerpoint()
-            # Convert the exported video
-            logger.info("Starting video conversion")
-            convert_video(output_video_path, output_dir)
-
-        except Exception as outer_error:
-            logger.error(f"An error occurred during presentation creation or video export: {str(outer_error)}")
+                current_top = subtitle_bottom + pixels_to_points(20)
+            
+            bullet_shapes, current_top = add_bullet_points(slide, global_props, margin, current_top, content_width, layout_settings)
+            shapes.extend(bullet_shapes)
+            
+            timestamp_shapes, _ = add_timestamps(slide, global_props, margin, current_top, content_width, layout_settings)
+            shapes.extend(timestamp_shapes)
+            
+            finalize_presentation(presentation, shapes, output_pptx_path, output_video_path, layout_settings, project_dir)
+            
+        except Exception as inner_error:
+            logger.error(f"An error occurred during presentation creation: {str(inner_error)}")
             logger.error(traceback.format_exc())
-            # Force terminate PowerPoint in case of an exception
-            logger.info("Force terminating PowerPoint due to exception")
-            force_terminate_powerpoint()
-            raise  # Re-raise the exception to be caught in the outer try-except block
-        
+            raise
         finally:
-            # These operations might not be necessary now, but we'll keep them as a safeguard
             if presentation:
                 try:
                     presentation.Close()
@@ -653,17 +680,42 @@ def create_presentation(video_info, layout_settings_path, output_dir, base_folde
                 except Exception:
                     pass
             logger.info("PowerPoint handling completed")
-
-            # Force COM objects to be released
+            
             del presentation
             del powerpoint
             gc.collect()
-
+        
+        # Save the global_props.json file
+        global_props_path = os.path.join(project_dir, "global_props.json")
+        with open(global_props_path, 'w', encoding='utf-8') as json_file:
+            json.dump(global_props, json_file, ensure_ascii=False, indent=4)
+        logger.info(f"Saved global_props.json to {global_props_path}")
+        logger.info(f"Final global_props keys: {global_props.keys()}")
+        
+        # Save the video-specific JSON file
+        video_json_path = os.path.join(project_dir, f"{project_name}.json")
+        with open(video_json_path, 'w', encoding='utf-8') as json_file:
+            json.dump(video_specific_info, json_file, ensure_ascii=False, indent=4)
+        logger.info(f"Saved video-specific JSON to {video_json_path}")
+        logger.info(f"Final video_specific_info keys: {video_specific_info.keys()}")
+        
+        # Verify file contents
+        with open(global_props_path, 'r', encoding='utf-8') as f:
+            saved_global_props = json.load(f)
+            logger.info(f"Verified global_props.json contents. Keys: {saved_global_props.keys()}")
+        
+        with open(video_json_path, 'r', encoding='utf-8') as f:
+            saved_video_specific = json.load(f)
+            logger.info(f"Verified {project_name}.json contents. Keys: {saved_video_specific.keys()}")
+        
     except Exception as outer_error:
-        logger.error(f"An outer error occurred while processing {base_folder_url}: {str(outer_error)}")
+        logger.error(f"An outer error occurred during presentation creation: {str(outer_error)}")
         logger.error(traceback.format_exc())
+        force_terminate_powerpoint()
     
-    logger.info(f"Presentation creation and video export process completed for {base_name}")
+    logger.info(f"Presentation creation and video export process completed for {project_name}")
+
+    
 
 def process_folder(input_folder, layout_settings_path):
     logger.info(f"Starting batch processing for folder: {input_folder}")
@@ -707,17 +759,17 @@ def export_to_video(presentation, output_path, layout_settings):
             os.remove(abs_output_path)
 
         # Get the video dimensions from layout settings
-        video_width = layout_settings['video']['width']
-        video_height = layout_settings['video']['height']
+        video_width = layout_settings["video"]["width"]
+        video_height = layout_settings["video"]["height"]
 
         # Set video export settings with dimensions from layout settings
         presentation.CreateVideo(
-            abs_output_path,
-            UseTimingsAndNarrations=True,
-            VertResolution=video_height
+            abs_output_path, UseTimingsAndNarrations=True, VertResolution=video_height
         )
 
-        logger.info(f"Starting video export to {abs_output_path} at {video_width}x{video_height}...")
+        logger.info(
+            f"Starting video export to {abs_output_path} at {video_width}x{video_height}..."
+        )
 
         # Check for file existence and size every second
         start_time = time.time()
@@ -736,7 +788,7 @@ def export_to_video(presentation, output_path, layout_settings):
         logger.error(f"Error during video export: {str(e)}")
         logger.error(traceback.format_exc())
         return False
-    
+
 
 def add_bullet_point(slide, text, left, top, width, height, settings):
     try:
@@ -765,35 +817,40 @@ def add_bullet_point(slide, text, left, top, width, height, settings):
         logger.error(traceback.format_exc())
         return None
 
+
 def cleanup_duplicate_entries(video_info):
     # Remove duplicate 'global_props.mp4' from order
-    if 'order' in video_info:
-        video_info['order'] = ['global_props.mp4'] + [item for item in video_info['order'] if item != 'global_props.mp4']
+    if "order" in video_info:
+        video_info["order"] = ["global_props.mp4"] + [
+            item for item in video_info["order"] if item != "global_props.mp4"
+        ]
 
     # Remove duplicate Introduction timestamps
-    if 'timestamps' in video_info:
+    if "timestamps" in video_info:
         seen_intro = False
         cleaned_timestamps = []
-        for ts in video_info['timestamps']:
-            if ts['text'] == "Introduction" and ts['time'] == "00:00:00":
+        for ts in video_info["timestamps"]:
+            if ts["text"] == "Introduction" and ts["time"] == "00:00:00":
                 if not seen_intro:
                     cleaned_timestamps.append(ts)
                     seen_intro = True
             else:
                 cleaned_timestamps.append(ts)
-        video_info['timestamps'] = cleaned_timestamps
+        video_info["timestamps"] = cleaned_timestamps
 
     return video_info
 
 
 def prepend_intro_timestamp(video_info):
     try:
-        logger.info(f"Processing video info. Keys present: {', '.join(video_info.keys())}")
-        
+        logger.info(
+            f"Processing video info. Keys present: {', '.join(video_info.keys())}"
+        )
+
         # Clean up any existing duplicate entries
         video_info = cleanup_duplicate_entries(video_info)
         # Check for required keys
-        required_keys = ['collection_title', 'title', 'subtitle']
+        required_keys = ["collection_title", "title", "subtitle"]
         missing_keys = [key for key in required_keys if key not in video_info]
         if missing_keys:
             logger.warning(f"Missing required keys: {', '.join(missing_keys)}")
@@ -802,52 +859,51 @@ def prepend_intro_timestamp(video_info):
                 video_info[key] = f"Default {key.replace('_', ' ').title()}"
 
         # Check if 'global_props.mp4' is already in the order array
-        if 'order' in video_info and 'global_props.mp4' not in video_info['order']:
-            video_info['order'].insert(0, 'global_props.mp4')
-        elif 'order' not in video_info:
-            video_info['order'] = ['global_props.mp4']
+        if "order" in video_info and "global_props.mp4" not in video_info["order"]:
+            video_info["order"].insert(0, "global_props.mp4")
+        elif "order" not in video_info:
+            video_info["order"] = ["global_props.mp4"]
 
         # Create the new intro timestamp
-        intro_timestamp = {
-            "text": "Introduction",
-            "time": "00:00:00",
-            "duration": 10
-        }
+        intro_timestamp = {"text": "Introduction", "time": "00:00:00", "duration": 10}
 
         # Check if the Introduction timestamp already exists
-        if 'timestamps' in video_info:
-            if not any(ts['text'] == "Introduction" and ts['time'] == "00:00:00" for ts in video_info['timestamps']):
-                video_info['timestamps'].insert(0, intro_timestamp)
-                
+        if "timestamps" in video_info:
+            if not any(
+                ts["text"] == "Introduction" and ts["time"] == "00:00:00"
+                for ts in video_info["timestamps"]
+            ):
+                video_info["timestamps"].insert(0, intro_timestamp)
+
                 # Adjust all other timestamps by adding 10 seconds
-                for timestamp in video_info['timestamps'][1:]:
-                    time_parts = timestamp['time'].split(':')
+                for timestamp in video_info["timestamps"][1:]:
+                    time_parts = timestamp["time"].split(":")
                     hours = int(time_parts[0])
                     minutes = int(time_parts[1])
                     seconds = int(time_parts[2])
-                    
+
                     total_seconds = hours * 3600 + minutes * 60 + seconds + 10
                     new_hours = total_seconds // 3600
                     new_minutes = (total_seconds % 3600) // 60
                     new_seconds = total_seconds % 60
-                    
-                    timestamp['time'] = f"{new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}"
+
+                    timestamp["time"] = (
+                        f"{new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}"
+                    )
         else:
-            video_info['timestamps'] = [intro_timestamp]
+            video_info["timestamps"] = [intro_timestamp]
 
         # Add or update the 'transcript' array
-        if 'transcript' not in video_info:
-            video_info['transcript'] = []
+        if "transcript" not in video_info:
+            video_info["transcript"] = []
 
         # Combine collection title, title, and subtitle
         combined_text = f"{video_info['collection_title']}. {video_info['title']}. {video_info['subtitle']}"
 
         # Create new transcript item (without timestamp)
-        new_transcript_item = {
-            "text": combined_text
-        }
+        new_transcript_item = {"text": combined_text}
         # Append the new item to the transcript array
-        video_info['transcript'].append(new_transcript_item)
+        video_info["transcript"].append(new_transcript_item)
 
     except Exception as e:
         logger.error(f"Unexpected error in prepend_intro_timestamp: {str(e)}")
@@ -860,11 +916,11 @@ def prepend_intro_timestamp(video_info):
 def process_urls(base_folder_url, layout_settings_path):
     try:
         # Ensure the base_folder_url ends with a trailing slash
-        if not base_folder_url.endswith('/'):
-            base_folder_url += '/'
+        if not base_folder_url.endswith("/"):
+            base_folder_url += "/"
 
         # Construct the full URL for the global_props.json
-        global_props_url = base_folder_url + 'global_props.json'
+        global_props_url = base_folder_url + "global_props.json"
 
         logger.info(f"Fetching global_props.json from: {global_props_url}")
         response = requests.get(global_props_url)
@@ -878,31 +934,33 @@ def process_urls(base_folder_url, layout_settings_path):
         logger.error(f"Failed to fetch or process URL: {str(e)}")
     except json.JSONDecodeError:
         logger.error(f"Failed to parse JSON from {global_props_url}")
-    
+
     logger.info("Processing completed")
-
-
 
 
 def process_single_url(video_info, base_folder_url, layout_settings_path):
     logger.info(f"Processing data from: {base_folder_url}")
     try:
-        logger.info(f"Successfully fetched JSON data. Keys present: {', '.join(video_info.keys())}")
-        
+        logger.info(
+            f"Successfully fetched JSON data. Keys present: {', '.join(video_info.keys())}"
+        )
+
         output_dir = os.getcwd()  # or specify a different output directory
-        create_presentation(video_info, layout_settings_path, output_dir, base_folder_url)
+        create_presentation(
+            video_info, layout_settings_path, output_dir, base_folder_url
+        )
     except Exception as e:
         logger.error(f"Failed to process data from {base_folder_url}: {str(e)}")
         logger.error(traceback.format_exc())
     logger.info(f"Completed processing for: {base_folder_url}")
 
 
-def download_file(url, filename):
+def download_file(url, filename, project_dir):
     try:
         response = requests.get(url)
         response.raise_for_status()
-        local_path = os.path.join(os.getcwd(), filename)
-        with open(local_path, 'wb') as f:
+        local_path = os.path.join(project_dir, filename)
+        with open(local_path, "wb") as f:
             f.write(response.content)
         logger.info(f"Successfully downloaded file from {url} to {local_path}")
         return local_path
@@ -911,9 +969,10 @@ def download_file(url, filename):
         return None
 
 
-
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
     logger = logging.getLogger(__name__)
 
     print("Welcome to the Batch Video Intro Creator!")
@@ -924,11 +983,15 @@ if __name__ == "__main__":
     layout_settings_path = os.path.join(script_dir, "layout_settings.json")
 
     if not os.path.exists(layout_settings_path):
-        print(f"Error: layout_settings.json not found in the script directory: {script_dir}")
-        logger.error(f"layout_settings.json not found in the script directory: {script_dir}")
+        print(
+            f"Error: layout_settings.json not found in the script directory: {script_dir}"
+        )
+        logger.error(
+            f"layout_settings.json not found in the script directory: {script_dir}"
+        )
         sys.exit(1)
 
-    if mode == 'l':
+    if mode == "l":
         print("Please enter the path to the folder containing your JSON files:")
         input_folder = input().strip().strip("\"'")
         if not os.path.exists(input_folder):
@@ -936,12 +999,16 @@ if __name__ == "__main__":
             logger.error(f"Input folder does not exist: {input_folder}")
             sys.exit(1)
         process_folder(input_folder, layout_settings_path)
-    elif mode == 'r':
-        print("Please enter the URL of the JSON file (either a single global_props.json or a list of URLs):")
+    elif mode == "r":
+        print(
+            "Please enter the URL of the JSON file (either a single global_props.json or a list of URLs):"
+        )
         url_list_json = input().strip()
         process_urls(url_list_json, layout_settings_path)
     else:
-        print("Invalid mode selected. Please run the script again and choose 'local' or 'remote'.")
+        print(
+            "Invalid mode selected. Please run the script again and choose 'local' or 'remote'."
+        )
         sys.exit(1)
 
     print("Batch processing completed. Check the log for details.")
