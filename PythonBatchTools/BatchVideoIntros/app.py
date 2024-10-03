@@ -10,6 +10,7 @@ import math
 import logging
 import subprocess
 import shutil
+import requests
 
 # Set up logging
 logging.basicConfig(
@@ -366,18 +367,20 @@ def build_timestamp_with_dots(slide, text, time_str, max_width, font_name, font_
     return formatted_text
 
 
-
-def create_presentation(video_info_path, layout_settings_path, output_dir):
-    base_name = os.path.splitext(os.path.basename(video_info_path))[0]
-    logger.info(f"Starting presentation creation for {base_name}")
-    
+def create_presentation(video_info, layout_settings_path, output_dir, base_folder_url):
     try:
-        # Prepend intro timestamp, adjust other timestamps, and save changes
-        video_info = prepend_intro_timestamp(video_info_path)
+        # Use the last part of the URL as the base name
+        base_name = os.path.basename(base_folder_url.rstrip('/'))
+        logger.info(f"Starting presentation creation for {base_name}")
+        
+        # Prepend intro timestamp and adjust other timestamps
+        video_info = prepend_intro_timestamp(video_info)
 
         with open(layout_settings_path, "r") as file:
             layout_settings = json.load(file)
 
+        bullet_spacing = pixels_to_points(layout_settings["bullets"].get("spacing", 10))
+        
         # Ensure output_dir is an absolute path
         output_dir = os.path.abspath(output_dir)
 
@@ -415,9 +418,12 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             logger.info("Adding main content elements")
 
-            # Add the full-size image as a shape covering the entire slide
-            image_path = os.path.join(output_dir, 'intro_image.jpg')
-            if os.path.exists(image_path):
+            # Fetch and add the intro image from URL
+
+            image_url = f"{base_folder_url}/intro_image.jpg"
+            image_filename = 'intro_image.jpg'
+            image_path = download_file(image_url, image_filename)
+            if image_path:
                 try:
                     background_image = slide.Shapes.AddPicture(
                         FileName=image_path,
@@ -433,8 +439,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 except Exception as e:
                     logger.error(f"Error adding full-size intro image as shape: {str(e)}")
             else:
-                logger.warning(f"Image file not found: {image_path}")
-
+                logger.warning(f"Failed to download intro image from: {image_url}")
             # Add text area overlay
             text_area = slide.Shapes.AddShape(1, 0, 0, text_area_width, slide_height)
             text_area.Fill.ForeColor.RGB = 0xFFFFFF  # White color
@@ -527,7 +532,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
                 logger.info("Adding bullet points")
                 bullet_settings = layout_settings["bullets"]
                 default_spacing = 10  # You can adjust this default value
-                bullet_spacing = pixels_to_points(bullet_settings.get("spacing", default_spacing))
+                logger.info(f"Bullet spacing used: {bullet_spacing}")
 
                 current_top = subtitle_bottom + bullet_spacing + 20  # Start bullets below subtitle
 
@@ -575,7 +580,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             # Add some extra spacing between bullets and timestamps
             current_top += pixels_to_points(20)  # You can adjust this value as needed
 
-            for i, timestamp in enumerate(video_info["timestamps"]):
+            for i, timestamp in enumerate(video_info['timestamps']):
                 logger.info(f"Processing timestamp {i+1}: {timestamp['text']}")
                 formatted_text = build_timestamp_with_dots(
                     slide,
@@ -618,7 +623,7 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
 
             # Export to video
             logger.info("Exporting presentation to video")
-            export_to_video(presentation, output_video_path,layout_settings)
+            export_to_video(presentation, output_video_path, layout_settings)
 
             # Force terminate PowerPoint immediately after video export
             logger.info("Force terminating PowerPoint")
@@ -627,13 +632,14 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             logger.info("Starting video conversion")
             convert_video(output_video_path, output_dir)
 
-        except Exception as e:
-            logger.error(f"An error occurred during presentation creation or video export: {str(e)}")
+        except Exception as outer_error:
+            logger.error(f"An error occurred during presentation creation or video export: {str(outer_error)}")
             logger.error(traceback.format_exc())
             # Force terminate PowerPoint in case of an exception
             logger.info("Force terminating PowerPoint due to exception")
             force_terminate_powerpoint()
             raise  # Re-raise the exception to be caught in the outer try-except block
+        
         finally:
             # These operations might not be necessary now, but we'll keep them as a safeguard
             if presentation:
@@ -654,25 +660,16 @@ def create_presentation(video_info_path, layout_settings_path, output_dir):
             gc.collect()
 
     except Exception as outer_error:
-        logger.error(f"An outer error occurred while processing {video_info_path}: {str(outer_error)}")
+        logger.error(f"An outer error occurred while processing {base_folder_url}: {str(outer_error)}")
         logger.error(traceback.format_exc())
     
     logger.info(f"Presentation creation and video export process completed for {base_name}")
-    
 
-
-def process_folder(input_folder):
+def process_folder(input_folder, layout_settings_path):
     logger.info(f"Starting batch processing for folder: {input_folder}")
 
     if not os.path.exists(input_folder):
         logger.error(f"Input folder does not exist: {input_folder}")
-        return
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    layout_settings_path = os.path.join(script_dir, "layout_settings.json")
-
-    if not os.path.exists(layout_settings_path):
-        logger.error(f"layout_settings.json not found in the script directory: {script_dir}")
         return
 
     for root, dirs, files in os.walk(input_folder):
@@ -788,93 +785,165 @@ def cleanup_duplicate_entries(video_info):
 
     return video_info
 
-def prepend_intro_timestamp(video_info_path):
+
+def prepend_intro_timestamp(video_info):
     try:
-        with open(video_info_path, "r") as file:
-            video_info = json.load(file)
-    except json.JSONDecodeError:
-        logger.error(f"Corrupted or invalid JSON file: {video_info_path}")
-        raise  # Re-raise the exception to be caught in create_presentation
+        logger.info(f"Processing video info. Keys present: {', '.join(video_info.keys())}")
+        
+        # Clean up any existing duplicate entries
+        video_info = cleanup_duplicate_entries(video_info)
+        # Check for required keys
+        required_keys = ['collection_title', 'title', 'subtitle']
+        missing_keys = [key for key in required_keys if key not in video_info]
+        if missing_keys:
+            logger.warning(f"Missing required keys: {', '.join(missing_keys)}")
+            # Provide default values for missing keys
+            for key in missing_keys:
+                video_info[key] = f"Default {key.replace('_', ' ').title()}"
 
-    # Clean up any existing duplicate entries
-    video_info = cleanup_duplicate_entries(video_info)
+        # Check if 'global_props.mp4' is already in the order array
+        if 'order' in video_info and 'global_props.mp4' not in video_info['order']:
+            video_info['order'].insert(0, 'global_props.mp4')
+        elif 'order' not in video_info:
+            video_info['order'] = ['global_props.mp4']
 
+        # Create the new intro timestamp
+        intro_timestamp = {
+            "text": "Introduction",
+            "time": "00:00:00",
+            "duration": 10
+        }
 
-    # Check if 'global_props.mp4' is already in the order array
-    if 'order' in video_info and 'global_props.mp4' not in video_info['order']:
-        video_info['order'].insert(0, 'global_props.mp4')
-    elif 'order' not in video_info:
-        video_info['order'] = ['global_props.mp4']
-
-    # Create the new intro timestamp
-    intro_timestamp = {
-        "text": "Introduction",
-        "time": "00:00:00",
-        "duration": 10
-    }
-
-    # Check if the Introduction timestamp already exists
-    if 'timestamps' in video_info:
-        if not any(ts['text'] == "Introduction" and ts['time'] == "00:00:00" for ts in video_info['timestamps']):
-            video_info['timestamps'].insert(0, intro_timestamp)
-            
-            # Adjust all other timestamps by adding 10 seconds
-            for timestamp in video_info['timestamps'][1:]:
-                time_parts = timestamp['time'].split(':')
-                hours = int(time_parts[0])
-                minutes = int(time_parts[1])
-                seconds = int(time_parts[2])
+        # Check if the Introduction timestamp already exists
+        if 'timestamps' in video_info:
+            if not any(ts['text'] == "Introduction" and ts['time'] == "00:00:00" for ts in video_info['timestamps']):
+                video_info['timestamps'].insert(0, intro_timestamp)
                 
-                total_seconds = hours * 3600 + minutes * 60 + seconds + 10
-                new_hours = total_seconds // 3600
-                new_minutes = (total_seconds % 3600) // 60
-                new_seconds = total_seconds % 60
-                
-                timestamp['time'] = f"{new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}"
-    else:
-        video_info['timestamps'] = [intro_timestamp]
+                # Adjust all other timestamps by adding 10 seconds
+                for timestamp in video_info['timestamps'][1:]:
+                    time_parts = timestamp['time'].split(':')
+                    hours = int(time_parts[0])
+                    minutes = int(time_parts[1])
+                    seconds = int(time_parts[2])
+                    
+                    total_seconds = hours * 3600 + minutes * 60 + seconds + 10
+                    new_hours = total_seconds // 3600
+                    new_minutes = (total_seconds % 3600) // 60
+                    new_seconds = total_seconds % 60
+                    
+                    timestamp['time'] = f"{new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}"
+        else:
+            video_info['timestamps'] = [intro_timestamp]
 
-    # Add or update the 'transcript' array
-    if 'transcript' not in video_info:
-        video_info['transcript'] = []
+        # Add or update the 'transcript' array
+        if 'transcript' not in video_info:
+            video_info['transcript'] = []
 
-    # Combine collection title, title, and subtitle
-    combined_text = f"{video_info['collection_title']}. {video_info['title']}. {video_info['subtitle']}"
+        # Combine collection title, title, and subtitle
+        combined_text = f"{video_info['collection_title']}. {video_info['title']}. {video_info['subtitle']}"
 
-    # Create new transcript item (without timestamp)
-    new_transcript_item = {
-        "text": combined_text
-    }
-    # Append the new item to the transcript array
-    video_info['transcript'].append(new_transcript_item)
+        # Create new transcript item (without timestamp)
+        new_transcript_item = {
+            "text": combined_text
+        }
+        # Append the new item to the transcript array
+        video_info['transcript'].append(new_transcript_item)
 
-    # Save the modified video_info back to the JSON file
-    with open(video_info_path, "w") as file:
-        json.dump(video_info, file, indent=4)
+    except Exception as e:
+        logger.error(f"Unexpected error in prepend_intro_timestamp: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
 
     return video_info
 
 
+def process_urls(base_folder_url, layout_settings_path):
+    try:
+        # Ensure the base_folder_url ends with a trailing slash
+        if not base_folder_url.endswith('/'):
+            base_folder_url += '/'
+
+        # Construct the full URL for the global_props.json
+        global_props_url = base_folder_url + 'global_props.json'
+
+        logger.info(f"Fetching global_props.json from: {global_props_url}")
+        response = requests.get(global_props_url)
+        response.raise_for_status()
+        video_info = response.json()
+
+        # Process the single global_props.json
+        process_single_url(video_info, base_folder_url, layout_settings_path)
+
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch or process URL: {str(e)}")
+    except json.JSONDecodeError:
+        logger.error(f"Failed to parse JSON from {global_props_url}")
+    
+    logger.info("Processing completed")
+
+
+
+
+def process_single_url(video_info, base_folder_url, layout_settings_path):
+    logger.info(f"Processing data from: {base_folder_url}")
+    try:
+        logger.info(f"Successfully fetched JSON data. Keys present: {', '.join(video_info.keys())}")
+        
+        output_dir = os.getcwd()  # or specify a different output directory
+        create_presentation(video_info, layout_settings_path, output_dir, base_folder_url)
+    except Exception as e:
+        logger.error(f"Failed to process data from {base_folder_url}: {str(e)}")
+        logger.error(traceback.format_exc())
+    logger.info(f"Completed processing for: {base_folder_url}")
+
+
+def download_file(url, filename):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        local_path = os.path.join(os.getcwd(), filename)
+        with open(local_path, 'wb') as f:
+            f.write(response.content)
+        logger.info(f"Successfully downloaded file from {url} to {local_path}")
+        return local_path
+    except requests.RequestException as e:
+        logger.error(f"Failed to download file from {url}: {str(e)}")
+        return None
+
+
+
 if __name__ == "__main__":
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     logger = logging.getLogger(__name__)
 
     print("Welcome to the Batch Video Intro Creator!")
-    print("Please enter the path to the folder containing your JSON files:")
+    print("Enter 'l' for r processing or 'remote' for remote processing:")
+    mode = input().strip().lower()
 
-    input_folder = input().strip()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    layout_settings_path = os.path.join(script_dir, "layout_settings.json")
 
-    # Remove quotes if the user included them
-    input_folder = input_folder.strip("\"'")
-    # c:\Users\bpenn\ExpectancyLearning\BatApps\PythonBatchTools\BatchVideoIntros\json_files_to_process\
-    if not os.path.exists(input_folder):
-        print(f"Error: The folder '{input_folder}' does not exist.")
-        logger.error(f"Input folder does not exist: {input_folder}")
+    if not os.path.exists(layout_settings_path):
+        print(f"Error: layout_settings.json not found in the script directory: {script_dir}")
+        logger.error(f"layout_settings.json not found in the script directory: {script_dir}")
         sys.exit(1)
 
-    process_folder(input_folder)
+    if mode == 'l':
+        print("Please enter the path to the folder containing your JSON files:")
+        input_folder = input().strip().strip("\"'")
+        if not os.path.exists(input_folder):
+            print(f"Error: The folder '{input_folder}' does not exist.")
+            logger.error(f"Input folder does not exist: {input_folder}")
+            sys.exit(1)
+        process_folder(input_folder, layout_settings_path)
+    elif mode == 'r':
+        print("Please enter the URL of the JSON file (either a single global_props.json or a list of URLs):")
+        url_list_json = input().strip()
+        process_urls(url_list_json, layout_settings_path)
+    else:
+        print("Invalid mode selected. Please run the script again and choose 'local' or 'remote'.")
+        sys.exit(1)
 
     print("Batch processing completed. Check the log for details.")
+
+# http://127.0.0.1:5000/static/video_library/Labeler_Operation_Startup_and_Testing
