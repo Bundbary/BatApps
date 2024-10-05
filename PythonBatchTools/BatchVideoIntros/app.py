@@ -25,63 +25,79 @@ def pixels_to_points(pixels):
 
 def convert_video(input_file, output_dir):
     logger.info(f"Starting video conversion for: {input_file}")
-    
+
     file_name = os.path.basename(input_file)
-    
+
     # Get video duration
     duration_command = [
         "ffprobe",
-        "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        input_file
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        input_file,
     ]
     duration_result = subprocess.run(duration_command, capture_output=True, text=True)
     duration = float(duration_result.stdout.strip())
-    
+
     # Calculate fade start time (1 second before the end)
     fade_start = max(0, duration - 1)
-    
+
     # Prepare output file path
     output_file = os.path.join(output_dir, f"converted_{file_name}")
-    
+
     # Convert video with fade-out
     ffmpeg_command = [
         "ffmpeg",
-        "-i", input_file,
-        "-c:v", "libx264",
-        "-profile:v", "high",
-        "-preset", "medium",
-        "-crf", "23",
-        "-vf", f"fps=30,format=yuv420p,fade=t=out:st={fade_start}:d=1",  # Add fade-out filter
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-movflags", "+faststart",
+        "-i",
+        input_file,
+        "-c:v",
+        "libx264",
+        "-profile:v",
+        "high",
+        "-preset",
+        "medium",
+        "-crf",
+        "23",
+        "-vf",
+        f"fps=30,format=yuv420p,fade=t=out:st={fade_start}:d=1",  # Add fade-out filter
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
         output_file,
-        "-y"
+        "-y",
     ]
-    
+
     try:
         subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
         logger.info(f"Successfully converted {file_name} with fade-out")
-        
+
         # Verify the converted file
         ffprobe_command = [
             "ffprobe",
-            "-v", "error",
-            "-select_streams", "v:0",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
             "-count_packets",
-            "-show_entries", "stream=r_frame_rate,avg_frame_rate",
-            "-of", "csv=p=0",
-            output_file
+            "-show_entries",
+            "stream=r_frame_rate,avg_frame_rate",
+            "-of",
+            "csv=p=0",
+            output_file,
         ]
         result = subprocess.run(ffprobe_command, capture_output=True, text=True)
         logger.info(f"Converted file details:\n{result.stdout}")
-        
+
         # If everything is successful, replace the original file with the converted one
         os.replace(output_file, input_file)
         logger.info(f"Replaced original file with converted file: {input_file}")
-        
+
     except subprocess.CalledProcessError as e:
         logger.error(f"Error converting {file_name}: {e}")
         logger.error(f"FFmpeg error output: {e.stderr}")
@@ -89,7 +105,7 @@ def convert_video(input_file, output_dir):
         if os.path.exists(output_file):
             os.remove(output_file)
         raise
-    
+
     logger.info(f"Video conversion completed for: {input_file}")
 
 
@@ -590,82 +606,112 @@ def finalize_presentation(
     convert_video(output_video_path, project_dir)
 
 
-
 def create_presentation(video_info, layout_settings_path, output_dir, base_folder_url):
     try:
         project_name, project_dir = setup_project_directory(output_dir, base_folder_url)
         logger.info(f"Starting presentation creation for {project_name}")
-        
+
         # Modify video_info (add timestamps, etc.) before splitting
         video_info = prepend_intro_timestamp(video_info)
-        
+
         # Explicitly create global_props and video_specific_info
         global_props = video_info.copy()
         video_specific_info = {
-            'duration': global_props.pop('duration', ''),
-            'transcript': global_props.pop('transcript', []),
-            'label': 'intro'  # Add the new 'label' field
+            "duration": global_props.pop("duration", ""),
+            "transcript": global_props.pop("transcript", []),
+            "label": "intro",  # Add the new 'label' field
         }
-        
+
         logger.info(f"Initial global_props keys: {global_props.keys()}")
         logger.info(f"Initial video_specific_info keys: {video_specific_info.keys()}")
-        
+
         with open(layout_settings_path, "r") as file:
             layout_settings = json.load(file)
-        
+
         output_pptx_path = os.path.join(project_dir, f"{project_name}.pptx")
         output_video_path = os.path.join(project_dir, f"{project_name}.mp4")
-        
+
         # Update the 'order' array in global_props
-        if 'order' in global_props:
+        if "order" in global_props:
             mp4_filename = f"{project_name}.mp4"
-            global_props['order'] = [mp4_filename if item == 'global_props.mp4' else item for item in global_props['order']]
+            global_props["order"] = [
+                mp4_filename if item == "global_props.mp4" else item
+                for item in global_props["order"]
+            ]
         else:
             logger.warning("No 'order' array found in global_props")
-        
+
         powerpoint = None
         presentation = None
         try:
-            powerpoint, presentation, slide_width, slide_height = initialize_powerpoint(layout_settings)
+            powerpoint, presentation, slide_width, slide_height = initialize_powerpoint(
+                layout_settings
+            )
             slide = create_slide(presentation)
-            
+
             margin = pixels_to_points(layout_settings["slide"]["margin"])
             text_area_width = slide_width * 0.4
             content_width = text_area_width - margin * 2
-            
+
             image_url = f"{base_folder_url}/intro_image.jpg"
-            add_background_image(slide, image_url, 'intro_image.jpg', project_dir, slide_width, slide_height)
-            
+            add_background_image(
+                slide,
+                image_url,
+                "intro_image.jpg",
+                project_dir,
+                slide_width,
+                slide_height,
+            )
+
             text_area = add_text_overlay(slide, text_area_width, slide_height)
             shapes = [text_area]
-            
+
             current_top = margin
-            
-            collection_title, height = add_collection_title(slide, global_props, margin, content_width, layout_settings)
+
+            collection_title, height = add_collection_title(
+                slide, global_props, margin, content_width, layout_settings
+            )
             if collection_title:
                 shapes.append(collection_title)
                 current_top += height
-            
-            title_box, height = add_main_title(slide, global_props, margin, current_top, content_width, layout_settings)
+
+            title_box, height = add_main_title(
+                slide, global_props, margin, current_top, content_width, layout_settings
+            )
             if title_box:
                 shapes.append(title_box)
                 current_top += height
-            
-            subtitle_box, subtitle_bottom = add_subtitle(slide, global_props, margin, current_top, content_width, layout_settings)
+
+            subtitle_box, subtitle_bottom = add_subtitle(
+                slide, global_props, margin, current_top, content_width, layout_settings
+            )
             if subtitle_box:
                 shapes.append(subtitle_box)
                 current_top = subtitle_bottom + pixels_to_points(20)
-            
-            bullet_shapes, current_top = add_bullet_points(slide, global_props, margin, current_top, content_width, layout_settings)
+
+            bullet_shapes, current_top = add_bullet_points(
+                slide, global_props, margin, current_top, content_width, layout_settings
+            )
             shapes.extend(bullet_shapes)
-            
-            timestamp_shapes, _ = add_timestamps(slide, global_props, margin, current_top, content_width, layout_settings)
+
+            timestamp_shapes, _ = add_timestamps(
+                slide, global_props, margin, current_top, content_width, layout_settings
+            )
             shapes.extend(timestamp_shapes)
-            
-            finalize_presentation(presentation, shapes, output_pptx_path, output_video_path, layout_settings, project_dir)
-            
+
+            finalize_presentation(
+                presentation,
+                shapes,
+                output_pptx_path,
+                output_video_path,
+                layout_settings,
+                project_dir,
+            )
+
         except Exception as inner_error:
-            logger.error(f"An error occurred during presentation creation: {str(inner_error)}")
+            logger.error(
+                f"An error occurred during presentation creation: {str(inner_error)}"
+            )
             logger.error(traceback.format_exc())
             raise
         finally:
@@ -680,41 +726,48 @@ def create_presentation(video_info, layout_settings_path, output_dir, base_folde
                 except Exception:
                     pass
             logger.info("PowerPoint handling completed")
-            
+
             del presentation
             del powerpoint
             gc.collect()
-        
+
         # Save the global_props.json file
         global_props_path = os.path.join(project_dir, "global_props.json")
-        with open(global_props_path, 'w', encoding='utf-8') as json_file:
+        with open(global_props_path, "w", encoding="utf-8") as json_file:
             json.dump(global_props, json_file, ensure_ascii=False, indent=4)
         logger.info(f"Saved global_props.json to {global_props_path}")
         logger.info(f"Final global_props keys: {global_props.keys()}")
-        
+
         # Save the video-specific JSON file
         video_json_path = os.path.join(project_dir, f"{project_name}.json")
-        with open(video_json_path, 'w', encoding='utf-8') as json_file:
+        with open(video_json_path, "w", encoding="utf-8") as json_file:
             json.dump(video_specific_info, json_file, ensure_ascii=False, indent=4)
         logger.info(f"Saved video-specific JSON to {video_json_path}")
         logger.info(f"Final video_specific_info keys: {video_specific_info.keys()}")
-        
+
         # Verify file contents
-        with open(global_props_path, 'r', encoding='utf-8') as f:
+        with open(global_props_path, "r", encoding="utf-8") as f:
             saved_global_props = json.load(f)
-            logger.info(f"Verified global_props.json contents. Keys: {saved_global_props.keys()}")
-        
-        with open(video_json_path, 'r', encoding='utf-8') as f:
+            logger.info(
+                f"Verified global_props.json contents. Keys: {saved_global_props.keys()}"
+            )
+
+        with open(video_json_path, "r", encoding="utf-8") as f:
             saved_video_specific = json.load(f)
-            logger.info(f"Verified {project_name}.json contents. Keys: {saved_video_specific.keys()}")
-        
+            logger.info(
+                f"Verified {project_name}.json contents. Keys: {saved_video_specific.keys()}"
+            )
+
     except Exception as outer_error:
-        logger.error(f"An outer error occurred during presentation creation: {str(outer_error)}")
+        logger.error(
+            f"An outer error occurred during presentation creation: {str(outer_error)}"
+        )
         logger.error(traceback.format_exc())
         force_terminate_powerpoint()
-    
-    logger.info(f"Presentation creation and video export process completed for {project_name}")
 
+    logger.info(
+        f"Presentation creation and video export process completed for {project_name}"
+    )
 
 
 def process_folder(input_folder, layout_settings_path):
@@ -936,21 +989,25 @@ def process_urls(base_folder_url, layout_settings_path):
         logger.error(f"Failed to parse JSON from {global_props_url}")
 
     logger.info("Processing completed")
-import sys
+
 
 def get_upload_url(download_url):
     if download_url.startswith("http://localbrowse"):
         return "http://localbrowse/Users/bpenn/ExpectancyLearning/flask_apps/_util_scripts/video_intro_upload.php"
     elif download_url.startswith("https://chameleon.sdiclarity.com/"):
         return "https://chameleon.sdiclarity.com/flask_apps/_util_scripts/video_intro_upload.php"
+    elif download_url.startswith("http://127.0.0.1:5000/"):
+        logger.warning("Using 'http://127.0.0.1:5000/' is not recommended. Please use 'http://localbrowse' for local development.")
+        raise ValueError("Invalid URL for local development. Use 'http://localbrowse' instead.")
     else:
         logger.error(f"Unknown download URL: {download_url}")
         raise ValueError(f"Unknown download URL: {download_url}")
     
+
 def upload_file(file_path, upload_url, relative_dir, app_folder):
-    with open(file_path, 'rb') as file:
-        files = {'file': file}
-        data = {'directory': relative_dir, 'app_folder': app_folder}
+    with open(file_path, "rb") as file:
+        files = {"file": file}
+        data = {"directory": relative_dir, "app_folder": app_folder}
         try:
             response = requests.post(upload_url, files=files, data=data)
             response.raise_for_status()
@@ -959,8 +1016,6 @@ def upload_file(file_path, upload_url, relative_dir, app_folder):
         except requests.RequestException as e:
             logger.error(f"Failed to upload {file_path}: {str(e)}")
             return None
-     
-     
 def process_single_url(video_info, base_folder_url, layout_settings_path):
     logger.info(f"Processing data from: {base_folder_url}")
     try:
@@ -974,13 +1029,22 @@ def process_single_url(video_info, base_folder_url, layout_settings_path):
             upload_url = get_upload_url(base_folder_url)
         except ValueError as e:
             logger.error(f"Critical error: {str(e)}")
-            sys.exit(1)  # Exit the script with an error code
+            return  # Return instead of sys.exit(1) to allow processing to continue
 
         # Extract relative directory and app folder from base_folder_url
         url_parts = base_folder_url.split('/')
-        app_folder_index = url_parts.index('flask_apps') + 1
-        app_folder = url_parts[app_folder_index]
-        relative_dir = '/'.join(url_parts[app_folder_index + 1:])  # This now includes 'static'
+        if base_folder_url.startswith("http://127.0.0.1:5000/"):
+            # For local development
+            app_folder = "local_dev"
+            relative_dir = '/'.join(url_parts[4:])  # Assumes the structure is http://127.0.0.1:5000/static/...
+        elif 'flask_apps' in url_parts:
+            # For production
+            app_folder_index = url_parts.index('flask_apps') + 1
+            app_folder = url_parts[app_folder_index]
+            relative_dir = '/'.join(url_parts[app_folder_index + 1:])
+        else:
+            logger.error(f"Unable to parse URL structure: {base_folder_url}")
+            return
 
         # Upload created files
         project_name = os.path.basename(base_folder_url.rstrip("/"))
@@ -994,7 +1058,11 @@ def process_single_url(video_info, base_folder_url, layout_settings_path):
         for filename in files_to_upload:
             file_path = os.path.join(output_dir, "remote_projects", project_name, filename)
             if os.path.exists(file_path):
-                upload_file(file_path, upload_url, relative_dir, app_folder)
+                upload_result = upload_file(file_path, upload_url, relative_dir, app_folder)
+                if upload_result:
+                    logger.info(f"Successfully uploaded {filename} to {upload_url}")
+                else:
+                    logger.error(f"Failed to upload {filename}")
             else:
                 logger.warning(f"File not found for upload: {file_path}")
 
@@ -1002,7 +1070,6 @@ def process_single_url(video_info, base_folder_url, layout_settings_path):
         logger.error(f"Failed to process data from {base_folder_url}: {str(e)}")
         logger.error(traceback.format_exc())
     logger.info(f"Completed processing for: {base_folder_url}")
-
 
 def download_file(url, filename, project_dir):
     try:
@@ -1054,19 +1121,17 @@ if __name__ == "__main__":
         )
         url_list_json = input().strip()
 
-
         try:
             process_urls(url_list_json, layout_settings_path)
         except SystemExit:
-            logger.info("Script exited due to a critical error. Check the log for details.")
+            logger.info(
+                "Script exited due to a critical error. Check the log for details."
+            )
             print("Script exited due to a critical error. Check the log for details.")
         except Exception as e:
             logger.error(f"An unexpected error occurred: {str(e)}")
             logger.error(traceback.format_exc())
             print("An unexpected error occurred. Check the log for details.")
-
-
-
 
     else:
         print(
